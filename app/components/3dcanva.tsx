@@ -825,7 +825,7 @@ export default function Scroll3DCanva() {
             );
           } else {
             console.warn(
-              "⚠️ GLB camera is not PerspectiveCamera, using fallback",
+              "⚠️ GLB camera is not PerspectiveCamera, using fallback ",
             );
             const fallbackDeviceType = getDeviceType();
             currentDeviceTypeRef.current = fallbackDeviceType;
