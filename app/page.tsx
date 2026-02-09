@@ -1,16 +1,17 @@
-import Image from "next/image";
-import ScrollVideo from "./components/ScrollVideo";
 import Neo from "./components/Neo";
-import Scrollvideoss from "./components/Scrollvideoss";
-import Scrollsingle from "./components/Scrollsingle";
+import Scroll3Dcanvas from "./components/3dcanvas";
+// import Text3DComponent from "./components/3dtext";
+import Scroll3Dcanva from "./components/3dcanva"; 
+import Scroll3DCanvasss from "./components/3dcanvasss";
+import SportstechLanding from "./components/ScrollAnimation";
 
 export default function Home() {
   return (
     <div>
-      <ScrollVideo />
-      {/* <Neo/> */}
-      {/* <Scrollvideoss/> */}
-      {/* <Scrollsingle/> */}
+      {/* <Scroll3Dcanvas /> */}
+      <Scroll3Dcanva />
+      {/* <Scroll3DCanvasss /> */}
+      {/* <SportstechLanding /> */}
     </div>
   );
 }
