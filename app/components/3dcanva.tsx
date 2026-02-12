@@ -14,9 +14,9 @@ if (typeof window !== "undefined") {
 
 /* ==================== CONFIG ==================== */
 const CONFIG = {
-  TOTAL_FRAMES: 120,
+  TOTAL_FRAMES: 130,
   MODEL: {
-    PATH: "https://s3.us-east-1.amazonaws.com/sportstech.team/dev_assets/Sbike51.glb",
+    PATH: "https://s3.us-east-1.amazonaws.com/sportstech.team/dev_assets/Sbike31.glb",
     POSITION_Y_OFFSET: -1,
     SCALE: {
       sm: 0.04,
@@ -93,8 +93,8 @@ const CONFIG = {
     },
     {
       id: 2,
-      frameStart: 40,
-      frameEnd: 50,
+      frameStart: 45,
+      frameEnd: 53,
       position: {
         sm: { top: 150, left: 15 },
         md: { top: 240, left: 40 },
@@ -107,8 +107,8 @@ const CONFIG = {
     },
     {
       id: 3,
-      frameStart: 64,
-      frameEnd: 74,
+      frameStart: 69,
+      frameEnd: 77,
       position: {
         sm: { top: 200, left: 15 },
         md: { top: 300, left: 40 },
@@ -121,8 +121,8 @@ const CONFIG = {
     },
     {
       id: 4,
-      frameStart: 85,
-      frameEnd: 95,
+      frameStart: 90,
+      frameEnd: 98,
       position: {
         sm: { top: 250, left: 15 },
         md: { top: 360, left: 40 },
