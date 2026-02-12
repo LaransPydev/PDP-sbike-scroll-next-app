@@ -880,7 +880,7 @@ export default function Scroll3DCanva() {
 
       {loading && !error && (
         <div className="fixed inset-0 flex items-center justify-center z-50 bg-black/80">
-          <div className="text-white text-xl">Loading 3D Model.....</div>
+          <div className="text-white text-xl">Loading 3D Model...</div>
         </div>
       )}
 
