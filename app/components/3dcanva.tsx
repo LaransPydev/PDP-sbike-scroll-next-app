@@ -88,7 +88,7 @@ const CONFIG = {
       },
       title: "LED lights",
       text: "The LED lights adapt to your performance and give you motivating feedback.",
-      src: "https://s3.us-east-1.amazonaws.com/sportstech.team/dev_assets/Frame3.svg",
+      src: "https://s3.us-east-1.amazonaws.com/sportstech.team/dev_assets/incandescent-light-bulb-svgrepo-com 1.svg",
       triggerWheelColorChange: true,
     },
     {
@@ -103,7 +103,7 @@ const CONFIG = {
       },
       title: "Seat Adjustment",
       text: "Customize your ride with our fully adjustable seat that moves vertically and horizontally, ensuring optimal positioning for riders of all heights and body types.",
-      src: "https://s3.us-east-1.amazonaws.com/sportstech.team/dev_assets/Frame3(4).svg",
+      src: "https://s3.us-east-1.amazonaws.com/sportstech.team/dev_assets/sit_13792655.svg",
     },
     {
       id: 3,
@@ -117,7 +117,7 @@ const CONFIG = {
       },
       title: "Auto-resistance: Your coach controls it",
       text: "The resistance adjusts automatically, or you can control it yourself.",
-      src: "https://s3.us-east-1.amazonaws.com/sportstech.team/dev_assets/Frame3(1).svg",
+      src: "https://s3.us-east-1.amazonaws.com/sportstech.team/dev_assets/resistanceknob.svg",
     },
     {
       id: 4,
@@ -131,7 +131,7 @@ const CONFIG = {
       },
       title: "21.5 Display",
       text: "With the 360-degree swiveling touch display, your workouts are more flexible than ever!",
-      src: "https://s3.us-east-1.amazonaws.com/sportstech.team/dev_assets/Frame3(3).svg",
+      src: "https://s3.us-east-1.amazonaws.com/sportstech.team/dev_assets/square_3942733.svg",
     },
   ],
 };
@@ -275,8 +275,8 @@ const TextAnnotation: React.FC<TextAnnotationProps> = React.memo(({ annotation, 
         pointerEvents: 'none',
       }}
     >
-      <div className="rounded-xl p-3 md:p-4 lg:p-5 w-56 sm:w-64 md:w-72 lg:w-80">
-        <img src={annotation.src} alt={annotation.title} className="mb-2 rounded-lg w-10" />
+      <div className="rounded-xl p-3 md:p-4 lg:p-5 w-56 sm:w-64 md:w-72 lg:w-80 flex flex-col justify-start items-start">
+        <img src={annotation.src} alt={annotation.title} className="mb-2 rounded-lg w-12" />
         <h3 className="text-sm sm:text-base md:text-lg font-bold font-mono text-gray-900 mb-2">{annotation.title}</h3>
         <p className="text-gray-700 text-xs md:text-sm font-mono leading-relaxed">{annotation.text}</p>
       </div>
