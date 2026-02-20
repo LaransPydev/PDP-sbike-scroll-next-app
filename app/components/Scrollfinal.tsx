@@ -80,7 +80,7 @@ const CONFIG = {
     },
     {
       id: 3, frameStart: 74, frameEnd: 81, stopFrame: 74,
-      position: { lg: { top: 330, left: 350 }, xl: { top: 400, left: 520 } },
+      position: { lg: { top: 330, left: 320 }, xl: { top: 400, left: 520 } },
       mobileLayout: { top: "60%", bottom: "auto", left: 85, right: "auto", marginTop: 0, marginBottom: 0 },
       tabletLayout: { top: "auto", bottom: "auto", left: 50, right: "auto", marginTop: 0, marginBottom: 0 },
       title: "Auto Resistance",
