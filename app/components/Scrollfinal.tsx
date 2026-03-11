@@ -388,7 +388,8 @@ const TextAnnotationMobile: React.FC<TextAnnotationProps> = React.memo(({ annota
 TextAnnotationMobile.displayName = "TextAnnotationMobile";
 
 const CARD_WIDTH = 280;
-const LINE_LENGTH = 64; // horizontal line extending from the anchor dot
+const LINE_LENGTH = 64;
+const CARD_GAP = 10;
 
 const TextAnnotationDesktop: React.FC<TextAnnotationProps> = React.memo(({ annotation, isVisible, deviceType, cardRef, anchorScreenPt }) => {
   const isRight = annotation.align === "right";
@@ -421,7 +422,9 @@ const TextAnnotationDesktop: React.FC<TextAnnotationProps> = React.memo(({ annot
     prevVisibleRef.current = isVisible;
   }, [isVisible]);
 
-  const cardLeft = isRight ? anchorX - LINE_LENGTH - CARD_WIDTH : anchorX + LINE_LENGTH;
+  const cardLeft = isRight
+    ? anchorX - LINE_LENGTH - CARD_WIDTH - CARD_GAP
+    : anchorX + LINE_LENGTH + CARD_GAP;
 
   // shouldShow: both visible (section settled) AND anchor snapshotted.
   // When no anchor yet, we still render but with display:none so:
@@ -657,7 +660,7 @@ export default function Scroll3DCanva() {
         p.then(() => {
           const isActive = vd === videosRef.current[activeVideoRef.current - 1];
           if (!isActive) vd.video.pause();
-        }).catch(() => {});
+        }).catch(() => { });
       }
     }
   }, []);
