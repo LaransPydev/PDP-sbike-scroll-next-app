@@ -17,7 +17,7 @@ if (typeof window !== "undefined") {
 const CONFIG = {
     TOTAL_FRAMES: 550,
     MODEL: {
-        PATH: "/Sbike28.glb",
+        PATH: "/Sbike 35.glb",
         POSITION_Y_OFFSET: -1,
         SCALE: {
             mobile: 0.05,
