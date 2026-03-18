@@ -6,6 +6,9 @@ import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { DRACOLoader } from "three/examples/jsm/loaders/DRACOLoader.js";
 import { RGBELoader } from "three/examples/jsm/loaders/RGBELoader.js";
 import gsap from "gsap";
+import { ScrollTrigger } from "gsap/ScrollTrigger";
+
+gsap.registerPlugin(ScrollTrigger);
 
 /* ==================== SAFARI DETECTION ==================== */
 const isSafari = (): boolean => {
@@ -48,7 +51,7 @@ const CONFIG = {
     TRANSITION_DURATION: 1.0,
   },
   RENDERER: { MAX_PIXEL_RATIO: 2, TONE_MAPPING_EXPOSURE: 0.8 },
-  BACKGROUND: { COLOR: 0xffffff },
+  BACKGROUND: { COLOR: 0xF5F5F5 },
 
   SECTION_DURATIONS: {
     startToWheel: 1.8,
@@ -57,12 +60,10 @@ const CONFIG = {
   },
 
   SLOW_ZONES: [
-    { from: 10, to: 25, duration: 1.5 },
-    { from: 25, to: 55, duration: 1.5 },
+    { from: 10, to: 25, duration: 1.0 },
+    { from: 25, to: 55, duration: 1.0 },
   ],
 
-  // These meshes are hidden in the scene but used as screen-space anchors
-  // for the desktop annotation cards — one per TEXT_ANNOTATIONS entry.
   ANNOTATION_ANCHOR_MESHES: ["wheel_text", "screen_text"] as const,
 
   TEXT_ANNOTATIONS: [
@@ -97,6 +98,12 @@ const CONFIG = {
 } as const;
 
 const STOP_FRAMES = [0, ...CONFIG.TEXT_ANNOTATIONS.map(a => a.stopFrame), CONFIG.TOTAL_FRAMES];
+const TOTAL_SECTIONS = STOP_FRAMES.length;
+
+/* ==================== LAYOUT CONSTANTS ==================== */
+const NAV_HEIGHT = 62;
+// Increased distance to give ScrollTrigger more room to process the unpin properly
+const PIN_SCROLL_DISTANCE = 1000; 
 
 /* ==================== TYPES ==================== */
 type DeviceType = "sm" | "md" | "lg" | "xl";
@@ -107,6 +114,8 @@ interface StoredMaterialColors {
 }
 interface ScreenPt { x: number; y: number; ok: boolean; }
 interface ConnectorState { meshPt: ScreenPt; cardPt: { x: number; y: number }; }
+
+type ReleaseState = "idle" | "releasing" | "free";
 
 /* ==================== HELPERS ==================== */
 const isMobileDevice = (dt: DeviceType): boolean => dt === "sm";
@@ -154,7 +163,7 @@ const optimizeMaterial = (mat: THREE.Material, renderer: THREE.WebGLRenderer, is
   m.needsUpdate = true;
 };
 
-const createVideoTexture = (path: string, ios: boolean) => {
+const createVideoTexture = (path: string, _ios: boolean) => {
   try {
     const video = document.createElement("video");
     video.setAttribute("playsinline", "");
@@ -239,7 +248,7 @@ const Preloader: React.FC<PreloaderProps> = ({ progress, visible }) => {
       </div>
       <div style={{ marginTop: 28, textAlign: "center" }}>
         <p style={{ fontFamily: "'DM Mono','Courier New',monospace", fontSize: "11px", letterSpacing: "0.25em", color: "#dc2626", textTransform: "uppercase", marginBottom: 6 }}>sBike</p>
-        <p style={{ fontFamily: "'DM Mono','Courier New',monospace", fontSize: "11px", letterSpacing: "0.12em", color: "#aaa", textTransform: "uppercase" }}>{p < 100 ? "Loading 3D experience…" : "Preparing scene…"}</p>
+        <p style={{ fontFamily: "'DM Mono','Courier New',monospace", fontSize: "11px", letterSpacing: "0.12em", color: "#aaa", textTransform: "uppercase" }}>{p < 100 ? "Loading" : "Preparing scene…"}</p>
       </div>
       <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, height: 3, background: "#f0f0f0" }}>
         <div style={{ height: "100%", width: `${p}%`, background: "linear-gradient(90deg,#dc2626,#ef4444)", transition: "width 0.3s ease-out", borderRadius: "0 2px 2px 0" }} />
@@ -257,23 +266,14 @@ interface ConnectorLineProps {
 }
 
 const ConnectorLine: React.FC<ConnectorLineProps> = React.memo(({ meshPt, cardPt, visible, deviceType }) => {
-  // Keep a stable "last known good" position so the SVG stays mounted
-  // and can fade out with CSS opacity instead of unmounting instantly.
   const lastPtRef = useRef<{ x1: number; y1: number; x2: number; y2: number } | null>(null);
 
   if (deviceType === "lg" || deviceType === "xl") return null;
 
-  // Update last known position whenever meshPt is valid
   if (meshPt.ok) {
-    lastPtRef.current = {
-      x1: meshPt.x,
-      y1: meshPt.y,
-      x2: cardPt.x,
-      y2: cardPt.y,
-    };
+    lastPtRef.current = { x1: meshPt.x, y1: meshPt.y, x2: cardPt.x, y2: cardPt.y };
   }
 
-  // Nothing to render at all on first mount before any valid position
   if (!lastPtRef.current) return null;
 
   const { x1, y1, x2, y2 } = lastPtRef.current;
@@ -281,52 +281,29 @@ const ConnectorLine: React.FC<ConnectorLineProps> = React.memo(({ meshPt, cardPt
   const my = (y1 + y2) / 2 - 18;
   const pathD = `M ${x1} ${y1} Q ${mx} ${my} ${x2} ${y2}`;
   const lineLen = Math.hypot(x2 - x1, y2 - y1);
-
-  // Use stable IDs so SVG filters don't flicker when position updates
   const dashId = `dash-conn-${deviceType}`;
   const glowId = `glow-conn-${deviceType}`;
   const gradId = `grad-conn-${deviceType}`;
-
-  // Show only when both visible (section correct) AND meshPt is valid
   const show = visible && meshPt.ok;
 
   return (
-    <svg style={{
-      position: "fixed", inset: 0, width: "100%", height: "100%",
-      pointerEvents: "none", zIndex: 49, overflow: "visible",
-      opacity: show ? 1 : 0,
-      transition: "opacity 0.4s cubic-bezier(0.4,0,0.2,1)",
-      WebkitTransition: "opacity 0.4s cubic-bezier(0.4,0,0.2,1)",
-    }}>
+    <svg style={{ position: "fixed", inset: 0, width: "100%", height: "100%", pointerEvents: "none", zIndex: 49, overflow: "visible", opacity: show ? 1 : 0, transition: "opacity 0.4s cubic-bezier(0.4,0,0.2,1)", WebkitTransition: "opacity 0.4s cubic-bezier(0.4,0,0.2,1)" }}>
       <defs>
         <linearGradient id={gradId} x1={x1} y1={y1} x2={x2} y2={y2} gradientUnits="userSpaceOnUse">
           <stop offset="0%" stopColor="#dc2626" stopOpacity="0.9" />
           <stop offset="60%" stopColor="#9ca3af" stopOpacity="0.7" />
           <stop offset="100%" stopColor="#6b7280" stopOpacity="0.4" />
         </linearGradient>
-        <filter id={glowId} x="-20%" y="-20%" width="140%" height="140%">
-          <feGaussianBlur stdDeviation="2.5" result="blur" />
-          <feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge>
-        </filter>
+        <filter id={glowId} x="-20%" y="-20%" width="140%" height="140%"><feGaussianBlur stdDeviation="2.5" result="blur" /><feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge></filter>
         <filter id={dashId}><feGaussianBlur stdDeviation="1" /></filter>
       </defs>
       <path d={pathD} fill="none" stroke="#dc2626" strokeWidth="3" strokeOpacity="0.18" filter={`url(#${dashId})`} />
-      <path d={pathD} fill="none" stroke={`url(#${gradId})`} strokeWidth="1.5" strokeLinecap="round"
-        strokeDasharray={`${lineLen}`}
-        strokeDashoffset={show ? "0" : `${lineLen}`}
-        style={{ transition: "stroke-dashoffset 0.7s cubic-bezier(0.4,0,0.2,1)", WebkitTransition: "stroke-dashoffset 0.7s cubic-bezier(0.4,0,0.2,1)" }}
-      />
+      <path d={pathD} fill="none" stroke={`url(#${gradId})`} strokeWidth="1.5" strokeLinecap="round" strokeDasharray={`${lineLen}`} strokeDashoffset={show ? "0" : `${lineLen}`} style={{ transition: "stroke-dashoffset 0.7s cubic-bezier(0.4,0,0.2,1)", WebkitTransition: "stroke-dashoffset 0.7s cubic-bezier(0.4,0,0.2,1)" }} />
       <circle cx={x1} cy={y1} r="4" fill="#dc2626" opacity="0.95" filter={`url(#${glowId})`} />
-      <circle cx={x1} cy={y1} r="4" fill="none" stroke="#dc2626" strokeWidth="1.5" opacity="0.5">
-        <animate attributeName="r" values="4;9;4" dur="2s" repeatCount="indefinite" />
-        <animate attributeName="opacity" values="0.5;0;0.5" dur="2s" repeatCount="indefinite" />
-      </circle>
+      <circle cx={x1} cy={y1} r="4" fill="none" stroke="#dc2626" strokeWidth="1.5" opacity="0.5"><animate attributeName="r" values="4;9;4" dur="2s" repeatCount="indefinite" /><animate attributeName="opacity" values="0.5;0;0.5" dur="2s" repeatCount="indefinite" /></circle>
       <circle cx={x1} cy={y1} r="2" fill="#fff" opacity="0.9" />
       <circle cx={x2} cy={y2} r="3.5" fill="#6b7280" opacity="0.6" />
-      <circle cx={x2} cy={y2} r="3.5" fill="none" stroke="#9ca3af" strokeWidth="1" opacity="0.4">
-        <animate attributeName="r" values="3.5;6;3.5" dur="2.4s" repeatCount="indefinite" begin="0.4s" />
-        <animate attributeName="opacity" values="0.4;0;0.4" dur="2.4s" repeatCount="indefinite" begin="0.4s" />
-      </circle>
+      <circle cx={x2} cy={y2} r="3.5" fill="none" stroke="#9ca3af" strokeWidth="1" opacity="0.4"><animate attributeName="r" values="3.5;6;3.5" dur="2.4s" repeatCount="indefinite" begin="0.4s" /><animate attributeName="opacity" values="0.4;0;0.4" dur="2.4s" repeatCount="indefinite" begin="0.4s" /></circle>
       <circle cx={x2} cy={y2} r="1.5" fill="#fff" opacity="0.8" />
       <line x1={x2 - 6} y1={y2} x2={x2 + 6} y2={y2} stroke="#9ca3af" strokeWidth="1" opacity="0.5" strokeLinecap="round" />
       <line x1={x2} y1={y2 - 6} x2={x2} y2={y2 + 6} stroke="#9ca3af" strokeWidth="1" opacity="0.5" strokeLinecap="round" />
@@ -341,7 +318,6 @@ interface TextAnnotationProps {
   isVisible: boolean;
   deviceType: DeviceType;
   cardRef?: React.RefCallback<HTMLDivElement>;
-  // Screen-space position of the hidden anchor mesh (desktop only)
   anchorScreenPt?: ScreenPt;
 }
 
@@ -357,22 +333,7 @@ const TextAnnotationMobile: React.FC<TextAnnotationProps> = React.memo(({ annota
     right: toVal(layout.right as number | string),
   };
   return (
-    <div
-      ref={cardRef}
-      style={{
-        ...posStyle,
-        pointerEvents: "none",
-        zIndex: 50,
-        // Always mounted — visibility driven purely by opacity + transform
-        // so CSS transitions always have a DOM node to animate FROM and TO.
-        opacity: isVisible ? 1 : 0,
-        transform: isVisible ? "translateY(0px)" : "translateY(10px)",
-        WebkitTransform: isVisible ? "translateY(0px)" : "translateY(10px)",
-        transition: "opacity 0.35s cubic-bezier(0.4,0,0.2,1), transform 0.35s cubic-bezier(0.4,0,0.2,1)",
-        WebkitTransition: "opacity 0.35s cubic-bezier(0.4,0,0.2,1), -webkit-transform 0.35s cubic-bezier(0.4,0,0.2,1)",
-        willChange: "opacity, transform",
-      }}
-    >
+    <div ref={cardRef} style={{ ...posStyle, pointerEvents: "none", zIndex: 50, opacity: isVisible ? 1 : 0, transform: isVisible ? "translateY(0px)" : "translateY(10px)", WebkitTransform: isVisible ? "translateY(0px)" : "translateY(10px)", transition: "opacity 0.35s cubic-bezier(0.4,0,0.2,1), transform 0.35s cubic-bezier(0.4,0,0.2,1)", WebkitTransition: "opacity 0.35s cubic-bezier(0.4,0,0.2,1), -webkit-transform 0.35s cubic-bezier(0.4,0,0.2,1)", willChange: "opacity, transform" }}>
       <div className="rounded-2xl" style={{ width: cardW, boxShadow: "0 8px 32px rgba(0,0,0,0.18),0 2px 8px rgba(0,0,0,0.12),inset 0 1px 0 rgba(255,255,255,0.6)" }}>
         <div className="rounded-2xl p-3 flex flex-col gap-1.5" style={{ background: "linear-gradient(135deg,rgba(255,255,255,0.72) 0%,rgba(255,255,255,0.48) 100%)", WebkitBackdropFilter: "blur(20px) saturate(180%)", backdropFilter: "blur(20px) saturate(180%)", border: "1px solid rgba(255,255,255,0.55)", borderTop: "1px solid rgba(255,255,255,0.80)", borderLeft: "1px solid rgba(255,255,255,0.80)", boxShadow: "inset 0 1px 1px rgba(255,255,255,0.90)", isolation: "isolate" }}>
           <div className="flex justify-start items-center gap-2">
@@ -395,133 +356,47 @@ const TextAnnotationDesktop: React.FC<TextAnnotationProps> = React.memo(({ annot
   const isRight = annotation.align === "right";
   const lineRef = useRef<SVGLineElement>(null);
   const prevVisibleRef = useRef(false);
-
   const hasAnchor = anchorScreenPt?.ok === true;
   const anchorX = hasAnchor ? anchorScreenPt!.x : 0;
   const anchorY = hasAnchor ? anchorScreenPt!.y : 0;
 
-  // Drive the strokeDashoffset grow animation via a direct DOM mutation
-  // triggered by useEffect. This avoids the "no DOM node to transition from"
-  // problem that happens when we rely solely on React prop diffing.
   useEffect(() => {
     const line = lineRef.current;
     if (!line) return;
     if (isVisible && !prevVisibleRef.current) {
-      // Entering: set to full offset (hidden), then animate to 0 (drawn)
       line.style.transition = "none";
       line.style.strokeDashoffset = String(LINE_LENGTH);
-      // Force reflow so the browser registers the starting state
       void line.getBoundingClientRect();
       line.style.transition = "stroke-dashoffset 0.55s cubic-bezier(0.4,0,0.2,1) 0.05s";
       line.style.strokeDashoffset = "0";
     } else if (!isVisible && prevVisibleRef.current) {
-      // Leaving: animate back to full offset (hidden)
       line.style.transition = "stroke-dashoffset 0.3s cubic-bezier(0.4,0,0.2,1)";
       line.style.strokeDashoffset = String(LINE_LENGTH);
     }
     prevVisibleRef.current = isVisible;
   }, [isVisible]);
 
-  const cardLeft = isRight
-    ? anchorX - LINE_LENGTH - CARD_WIDTH - CARD_GAP
-    : anchorX + LINE_LENGTH + CARD_GAP;
-
-  // shouldShow: both visible (section settled) AND anchor snapshotted.
-  // When no anchor yet, we still render but with display:none so:
-  //   1. No (0,0) flash ever appears.
-  //   2. The component stays mounted so useEffect/refs are preserved for
-  //      the grow animation when the anchor is snapshotted next time.
+  const cardLeft = isRight ? anchorX - LINE_LENGTH - CARD_WIDTH - CARD_GAP : anchorX + LINE_LENGTH + CARD_GAP;
   const shouldShow = isVisible && hasAnchor;
 
   return (
     <div style={{ visibility: hasAnchor ? 'visible' : 'hidden', pointerEvents: 'none' }}>
-      {/* SVG layer: pulsing dot at anchor + growing horizontal line */}
-      <svg
-        style={{
-          position: "fixed",
-          inset: 0,
-          width: "100%",
-          height: "100%",
-          pointerEvents: "none",
-          zIndex: 49,
-          overflow: "visible",
-          opacity: shouldShow ? 1 : 0,
-          transition: "opacity 0.3s ease-out",
-          WebkitTransition: "opacity 0.3s ease-out",
-        }}
-      >
+      <svg style={{ position: "fixed", inset: 0, width: "100%", height: "100%", pointerEvents: "none", zIndex: 49, overflow: "visible", opacity: shouldShow ? 1 : 0, transition: "opacity 0.3s ease-out", WebkitTransition: "opacity 0.3s ease-out" }}>
         <defs>
-          <filter id={`glow-desktop-${annotation.id}`} x="-50%" y="-50%" width="200%" height="200%">
-            <feGaussianBlur stdDeviation="3" result="blur" />
-            <feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge>
-          </filter>
+          <filter id={`glow-desktop-${annotation.id}`} x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="3" result="blur" /><feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge></filter>
         </defs>
-
-        {/* Horizontal growing line — animation driven by useEffect above */}
-        <line
-          ref={lineRef}
-          x1={anchorX}
-          y1={anchorY}
-          x2={isRight ? anchorX - LINE_LENGTH : anchorX + LINE_LENGTH}
-          y2={anchorY}
-          stroke="#dc2626"
-          strokeWidth="1.5"
-          strokeLinecap="round"
-          strokeDasharray={LINE_LENGTH}
-          strokeDashoffset={LINE_LENGTH}
-        />
-
-        {/* Outer pulsing ring */}
-        <circle cx={anchorX} cy={anchorY} r="5" fill="none" stroke="#dc2626" strokeWidth="1.5" opacity="0.4">
-          <animate attributeName="r" values="5;11;5" dur="2s" repeatCount="indefinite" />
-          <animate attributeName="opacity" values="0.4;0;0.4" dur="2s" repeatCount="indefinite" />
-        </circle>
-        {/* Solid dot */}
+        <line ref={lineRef} x1={anchorX} y1={anchorY} x2={isRight ? anchorX - LINE_LENGTH : anchorX + LINE_LENGTH} y2={anchorY} stroke="#dc2626" strokeWidth="1.5" strokeLinecap="round" strokeDasharray={LINE_LENGTH} strokeDashoffset={LINE_LENGTH} />
+        <circle cx={anchorX} cy={anchorY} r="5" fill="none" stroke="#dc2626" strokeWidth="1.5" opacity="0.4"><animate attributeName="r" values="5;11;5" dur="2s" repeatCount="indefinite" /><animate attributeName="opacity" values="0.4;0;0.4" dur="2s" repeatCount="indefinite" /></circle>
         <circle cx={anchorX} cy={anchorY} r="4" fill="#dc2626" filter={`url(#glow-desktop-${annotation.id})`} />
-        {/* White center */}
         <circle cx={anchorX} cy={anchorY} r="1.8" fill="#fff" />
       </svg>
-
-      {/* Text card */}
-      <div
-        ref={cardRef}
-        className="fixed pointer-events-none z-50"
-        style={{
-          top: `${anchorY - 8}px`,
-          left: `${cardLeft}px`,
-          opacity: shouldShow ? 1 : 0,
-          transform: shouldShow
-            ? "translateX(0)"
-            : isRight ? "translateX(12px)" : "translateX(-12px)",
-          WebkitTransform: shouldShow
-            ? "translateX(0)"
-            : isRight ? "translateX(12px)" : "translateX(-12px)",
-          transition: "opacity 0.3s ease-out 0.15s, transform 0.3s ease-out 0.15s",
-          WebkitTransition: "opacity 0.3s ease-out 0.15s, -webkit-transform 0.3s ease-out 0.15s",
-          willChange: "opacity, transform",
-        }}
-      >
+      <div ref={cardRef} className="fixed pointer-events-none z-50" style={{ top: `${anchorY - 8}px`, left: `${cardLeft}px`, opacity: shouldShow ? 1 : 0, transform: shouldShow ? "translateX(0)" : isRight ? "translateX(12px)" : "translateX(-12px)", WebkitTransform: shouldShow ? "translateX(0)" : isRight ? "translateX(12px)" : "translateX(-12px)", transition: "opacity 0.3s ease-out 0.15s, transform 0.3s ease-out 0.15s", WebkitTransition: "opacity 0.3s ease-out 0.15s, -webkit-transform 0.3s ease-out 0.15s", willChange: "opacity, transform" }}>
         <div style={{ width: CARD_WIDTH }}>
           <div className={`flex items-center gap-2 mb-1.5 ${isRight ? "justify-end" : "justify-start"}`}>
-            <img
-              src={annotation.src}
-              alt={annotation.title}
-              className="w-10 h-10 object-contain flex-shrink-0"
-              draggable={false}
-            />
+            <img src={annotation.src} alt={annotation.title} className="w-10 h-10 object-contain flex-shrink-0" draggable={false} />
           </div>
-          <h3
-            className="font-bold font-mono text-gray-900 mb-1.5"
-            style={{ fontSize: "15px", textAlign: isRight ? "right" : "left" }}
-          >
-            {annotation.title}
-          </h3>
-          <p
-            className="text-gray-600 font-mono leading-relaxed"
-            style={{ fontSize: "12px", textAlign: isRight ? "right" : "left" }}
-          >
-            {annotation.text}
-          </p>
+          <h3 className="font-bold font-mono text-gray-900 mb-1.5" style={{ fontSize: "15px", textAlign: isRight ? "right" : "left" }}>{annotation.title}</h3>
+          <p className="text-gray-600 font-mono leading-relaxed" style={{ fontSize: "12px", textAlign: isRight ? "right" : "left" }}>{annotation.text}</p>
         </div>
       </div>
     </div>
@@ -538,6 +413,7 @@ const TextAnnotation: React.FC<TextAnnotationProps> = (props) => {
 export default function Scroll3DCanva() {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const pinSectionRef = useRef<HTMLDivElement>(null);
   const groundRef = useRef<THREE.Mesh | null>(null);
   const sceneRef = useRef<THREE.Scene | null>(null);
   const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
@@ -558,9 +434,6 @@ export default function Scroll3DCanva() {
 
   const pop01MeshRef = useRef<THREE.Object3D | null>(null);
   const connectorMeshRefs = useRef<(THREE.Object3D | null)[]>([null, null, null, null]);
-  // Hidden anchor meshes: wheel_text[0], screen_text[1]
-  // Meshes are set visible=false after load but their world positions are
-  // projected each RAF tick to drive desktop annotation card placement.
   const annotationAnchorRefs = useRef<(THREE.Object3D | null)[]>([null, null]);
   const annCardRefs = useRef<(HTMLDivElement | null)[]>([null, null, null, null]);
 
@@ -581,8 +454,13 @@ export default function Scroll3DCanva() {
   const iosRef = useRef(false);
   const macosRef = useRef(false);
 
-  const [loadProgress, setLoadProgress] = useState(0);
-  const [preloaderVisible, setPreloaderVisible] = useState(true);
+  const scrollTriggerRef = useRef<ScrollTrigger | null>(null);
+
+  /* ─── Release state refs ─── */
+  const releaseStateRef = useRef<ReleaseState>("idle");
+
+  const atTerminalRef = useRef<"first" | "last" | null>(null);
+
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showButtons, setShowButtons] = useState(false);
@@ -594,29 +472,112 @@ export default function Scroll3DCanva() {
   const [connectors, setConnectors] = useState<ConnectorState[]>(
     CONFIG.TEXT_ANNOTATIONS.map(() => ({ meshPt: { x: 0, y: 0, ok: false }, cardPt: { x: 0, y: 0 } }))
   );
-
-  // Projected screen positions of the hidden anchor meshes — drives desktop card placement
   const [anchorScreenPts, setAnchorScreenPts] = useState<ScreenPt[]>(
     CONFIG.TEXT_ANNOTATIONS.map(() => ({ x: 0, y: 0, ok: false }))
   );
+
+  /* ==================== GSAP SCROLLTRIGGER PIN ==================== */
+  useEffect(() => {
+    const section = pinSectionRef.current;
+    if (!section) return;
+
+    const st = ScrollTrigger.create({
+      trigger: section,
+      start: `top ${NAV_HEIGHT}px`,
+      end: `+=${PIN_SCROLL_DISTANCE}`,
+      pin: true,
+      pinSpacing: true,
+      anticipatePin: 1,
+      onToggle: (self) => {
+        if (!self.isActive && releaseStateRef.current === "releasing") {
+          releaseStateRef.current = "free";
+        }
+      },
+      onEnter: () => {
+        if (releaseStateRef.current === "free") {
+          releaseStateRef.current = "idle";
+          atTerminalRef.current = null;
+          sectionRef.current = 0;
+          gsapFrameObj.current.value = 0;
+          renderFrameRef.current = 0;
+          setCurrentSection(0);
+          setShowButtons(false);
+        }
+      },
+      onEnterBack: () => {
+        if (releaseStateRef.current === "free") {
+          releaseStateRef.current = "idle";
+          atTerminalRef.current = "last";
+          const lastIdx = TOTAL_SECTIONS - 1;
+          sectionRef.current = lastIdx;
+          gsapFrameObj.current.value = STOP_FRAMES[lastIdx];
+          renderFrameRef.current = STOP_FRAMES[lastIdx];
+          setCurrentSection(lastIdx);
+          setShowButtons(true);
+        }
+      },
+      onLeave: () => {
+        if (releaseStateRef.current === "releasing") {
+          releaseStateRef.current = "free";
+        }
+      },
+      onLeaveBack: () => {
+        if (releaseStateRef.current === "releasing") {
+          releaseStateRef.current = "free";
+        }
+      },
+    });
+
+    scrollTriggerRef.current = st;
+
+    return () => {
+      st.kill();
+      scrollTriggerRef.current = null;
+    };
+  }, []);
+
+  /* ==================== SCROLL POSITION GUARD ==================== */
+  useEffect(() => {
+    if (loading) return;
+    let rafId: number;
+
+    const guard = () => {
+      rafId = requestAnimationFrame(guard);
+      const st = scrollTriggerRef.current;
+      if (!st) return;
+
+      if (releaseStateRef.current !== "idle") return;
+
+      const needsLock = isTweeningRef.current ||
+        (sectionRef.current > 0 && sectionRef.current < TOTAL_SECTIONS - 1);
+
+      if (!needsLock) return;
+
+      const scrollY = window.scrollY || window.pageYOffset;
+      const pinStart = st.start;
+      const pinEnd = st.end;
+      const midPoint = pinStart + PIN_SCROLL_DISTANCE * 0.5;
+
+      if (scrollY >= pinEnd - 20 || scrollY <= pinStart + 20) {
+        window.scrollTo({ top: midPoint, behavior: "instant" as ScrollBehavior });
+      }
+    };
+
+    rafId = requestAnimationFrame(guard);
+    return () => cancelAnimationFrame(rafId);
+  }, [loading]);
+
+  /* ==================== CALLBACKS ==================== */
 
   const updatePop01Visibility = useCallback((dt: DeviceType) => {
     if (pop01MeshRef.current) pop01MeshRef.current.visible = isMobileDevice(dt);
   }, []);
 
   const prevAnnotationsRef = useRef<number[]>([]);
-  // updateAnnotations is called both during tween (onUpdate) and on completion (onDone).
-  // settled=true only when called from onDone (tween finished).
   const updateAnnotations = useCallback((frame: number, settled = false) => {
-    // Show/hide buttons based on frame
     if (frame >= CONFIG.TOTAL_FRAMES - 1) setShowButtons(true);
     else if (frame < CONFIG.TOTAL_FRAMES - 10) setShowButtons(false);
-    // Mobile card visibility rules:
-    //   SHOW: tween has fully completed (settled=true) AND sectionRef matches visibleAtSection
-    //   HIDE: immediately when targetSection moves away from visibleAtSection
-    // This means:
-    //   - Card appears only after the animation finishes landing on the section
-    //   - Card disappears the instant the user scrolls away (targetSection changes)
+
     const next: number[] = [];
     for (const a of CONFIG.TEXT_ANNOTATIONS) {
       const visibleAt = (a as any).visibleAtSection as number;
@@ -657,10 +618,7 @@ export default function Scroll3DCanva() {
     for (const vd of videosRef.current) {
       const p = vd.video.play();
       if (p !== undefined) {
-        p.then(() => {
-          const isActive = vd === videosRef.current[activeVideoRef.current - 1];
-          if (!isActive) vd.video.pause();
-        }).catch(() => { });
+        p.then(() => { const isActive = vd === videosRef.current[activeVideoRef.current - 1]; if (!isActive) vd.video.pause(); }).catch(() => { });
       }
     }
   }, []);
@@ -676,15 +634,20 @@ export default function Scroll3DCanva() {
         });
       }
     };
-    if (video.readyState >= 3) {
-      attempt();
-    } else {
+    if (video.readyState >= 3) { attempt(); }
+    else {
       const onReady = () => { video.removeEventListener("canplaythrough", onReady); attempt(); };
       video.addEventListener("canplaythrough", onReady, { once: true });
       if (needsSafariVideoUnlock()) video.load();
     }
   }, []);
 
+  const beginRelease = useCallback(() => {
+    if (releaseStateRef.current !== "idle") return;
+    releaseStateRef.current = "releasing";
+  }, []);
+
+  /* ─── goToSection ─── */
   const goToSection = useCallback((idx: number) => {
     if (idx < 0 || idx >= STOP_FRAMES.length) return;
     if (isTweeningRef.current && targetSectionRef.current === idx) return;
@@ -698,6 +661,10 @@ export default function Scroll3DCanva() {
     const sectionDur = sectionDurMap[idx] ?? 1.8;
     isTweeningRef.current = true;
     targetSectionRef.current = idx;
+
+    atTerminalRef.current = null;
+    releaseStateRef.current = "idle";
+
     const onDone = () => {
       gsapFrameObj.current.value = targetFrame;
       renderFrameRef.current = targetFrame;
@@ -705,14 +672,25 @@ export default function Scroll3DCanva() {
       isTweeningRef.current = false;
       setCurrentSection(idx);
       updateAnnotations(targetFrame, true);
+
       cooldownRef.current = true;
       if (cooldownTimerRef.current) clearTimeout(cooldownTimerRef.current);
-      cooldownTimerRef.current = setTimeout(() => { cooldownRef.current = false; }, 50);
+      cooldownTimerRef.current = setTimeout(() => { cooldownRef.current = false; }, 30);
+
+      if (idx >= TOTAL_SECTIONS - 1) {
+        atTerminalRef.current = "last";
+        ScrollTrigger.refresh();
+      } else if (idx <= 0) {
+        atTerminalRef.current = "first";
+        ScrollTrigger.refresh();
+      }
     };
+
     const goingForward = targetFrame > currentFrame;
     const activeSlowZones = goingForward
       ? [...CONFIG.SLOW_ZONES].filter(sz => currentFrame < sz.from && targetFrame >= sz.to).sort((a, b) => a.from - b.from)
       : [];
+
     if (activeSlowZones.length > 0) {
       const buildChain = (fromFrame: number, zoneIdx: number, chainDone: () => void) => {
         if (zoneIdx >= activeSlowZones.length) {
@@ -731,9 +709,7 @@ export default function Scroll3DCanva() {
         };
         if (durA > 0.01) {
           tweenRef.current = gsap.to(gsapFrameObj.current, { value: sz.from, duration: durA, ease: "power2.in", onUpdate: () => { updateAnnotations(gsapFrameObj.current.value); }, onComplete: runSlowZone });
-        } else {
-          runSlowZone();
-        }
+        } else { runSlowZone(); }
       };
       buildChain(currentFrame, 0, onDone);
     } else {
@@ -741,9 +717,16 @@ export default function Scroll3DCanva() {
     }
   }, [updateAnnotations]);
 
+  const goToSectionRef = useRef(goToSection);
+  goToSectionRef.current = goToSection;
+
+  /* ==================== SCROLL / INPUT HANDLERS ==================== */
   useEffect(() => {
     if (loading) return;
     let tpAccum = 0;
+    let tpLastDir = 0;
+    let touchStartY = 0;
+
     const markInteracted = () => {
       if (hasUserInteractedRef.current) return;
       hasUserInteractedRef.current = true;
@@ -753,50 +736,201 @@ export default function Scroll3DCanva() {
         const vd = videosRef.current[idx - 1]; if (vd) playVideoSafely(vd.video);
       }
     };
-    const onWheel = (e: WheelEvent) => {
-      e.preventDefault(); markInteracted();
-      const delta = e.deltaY, abs = Math.abs(delta), dir = delta > 0 ? 1 : -1;
-      if (isTweeningRef.current && targetSectionRef.current === sectionRef.current + dir) return;
-      if (cooldownRef.current && !isTweeningRef.current) return;
-      if (abs < 50) { tpAccum += abs; if (tpAccum < 120) return; tpAccum = 0; } else tpAccum = 0;
-      goToSection(sectionRef.current + dir);
+
+    const isSectionActive = (): boolean => {
+      if (releaseStateRef.current === "free" || releaseStateRef.current === "releasing") return false;
+
+      const st = scrollTriggerRef.current;
+      if (st && st.isActive) return true;
+
+      const el = pinSectionRef.current;
+      if (el) {
+        const rect = el.getBoundingClientRect();
+        if (rect.top <= NAV_HEIGHT + 80 && rect.bottom > window.innerHeight * 0.5) {
+          return true;
+        }
+      }
+      return false;
     };
-    let ty = 0;
-    const onTS = (e: TouchEvent) => { markInteracted(); ty = e.touches[0].clientY; };
+
+    const isAtTerminal = (dir: number): boolean => {
+      if (releaseStateRef.current !== "idle") return false;
+      if (isTweeningRef.current) return false;
+      if (atTerminalRef.current === null) return false;
+      if (dir === 1 && atTerminalRef.current === "last") return true;
+      if (dir === -1 && atTerminalRef.current === "first") return true;
+      return false;
+    };
+
+    const shouldReEngage = (dir: number): boolean => {
+      if (releaseStateRef.current !== "idle") return false;
+      if (isTweeningRef.current) return false;
+      if (atTerminalRef.current === null) return false;
+      if (atTerminalRef.current === "last" && dir === -1) return true;
+      if (atTerminalRef.current === "first" && dir === 1) return true;
+      return false;
+    };
+
+    const onWheel = (e: WheelEvent) => {
+      markInteracted();
+
+      if (releaseStateRef.current === "releasing" || releaseStateRef.current === "free") {
+        return; 
+      }
+
+      if (!isSectionActive()) return;
+
+      const delta = e.deltaY;
+      const abs = Math.abs(delta);
+      const dir = delta > 0 ? 1 : -1;
+
+      if (shouldReEngage(dir)) {
+        e.preventDefault();
+        atTerminalRef.current = null;
+        releaseStateRef.current = "idle";
+        if (!isTweeningRef.current) {
+          const next = sectionRef.current + dir;
+          if (next >= 0 && next < TOTAL_SECTIONS) goToSection(next);
+        }
+        return;
+      }
+
+     if (isAtTerminal(dir)) {
+  beginRelease();
+  const st = scrollTriggerRef.current;
+  if (st) {
+    // Instantly jump the scrollbar to the exact edge of the pin boundary
+    // so the user doesn't have to scroll through the empty pin spacing.
+    // +2 or -2 ensures we land just outside the trigger to fully unpin it.
+    const targetY = dir === 1 ? st.end + 2 : st.start - 2;
+    window.scrollTo({ top: targetY, behavior: "instant" });
+  }
+  return; 
+}
+
+      e.preventDefault();
+      if (isTweeningRef.current || cooldownRef.current) return;
+
+      if (dir !== tpLastDir) { tpAccum = 0; tpLastDir = dir; }
+      if (abs < 50) {
+        tpAccum += abs;
+        if (tpAccum < 100) return;
+        tpAccum = 0;
+      } else {
+        tpAccum = 0;
+      }
+
+      const next = sectionRef.current + dir;
+      if (next >= 0 && next < TOTAL_SECTIONS) goToSection(next);
+    };
+
+    const onTS = (e: TouchEvent) => {
+      markInteracted();
+      touchStartY = e.touches[0].clientY;
+    };
+
+    const onTM = (e: TouchEvent) => {
+      if (releaseStateRef.current === "releasing" || releaseStateRef.current === "free") return;
+      if (!isSectionActive()) return;
+      const dy = touchStartY - e.touches[0].clientY;
+      const dir = dy > 0 ? 1 : -1;
+      
+      if (shouldReEngage(dir)) { 
+        e.preventDefault(); 
+        return; 
+      }
+
+      if (isAtTerminal(dir)) {
+        beginRelease();
+        return;
+      }
+      
+      e.preventDefault();
+    };
+
     const onTE = (e: TouchEvent) => {
-      const dy = ty - e.changedTouches[0].clientY;
+      if (releaseStateRef.current === "releasing" || releaseStateRef.current === "free") return;
+      if (!isSectionActive()) return;
+      const dy = touchStartY - e.changedTouches[0].clientY;
       if (Math.abs(dy) < 30) return;
       const dir = dy > 0 ? 1 : -1;
+
+      if (shouldReEngage(dir)) {
+        atTerminalRef.current = null;
+        releaseStateRef.current = "idle";
+        if (!isTweeningRef.current) {
+          const next = sectionRef.current + dir;
+          if (next >= 0 && next < TOTAL_SECTIONS) goToSection(next);
+        }
+        return;
+      }
+
+      if (isAtTerminal(dir)) {
+        beginRelease();
+        return;
+      }
+
       if (isTweeningRef.current && targetSectionRef.current === sectionRef.current + dir) return;
-      goToSection(sectionRef.current + dir);
+      const next = sectionRef.current + dir;
+      if (next >= 0 && next < TOTAL_SECTIONS) goToSection(next);
     };
+
     const onKD = (e: KeyboardEvent) => {
+      if (releaseStateRef.current === "releasing" || releaseStateRef.current === "free") return;
+      if (!isSectionActive()) return;
       markInteracted();
       let dir = 0;
-      if (["ArrowDown", "PageDown", " "].includes(e.key)) { e.preventDefault(); dir = 1; }
-      if (["ArrowUp", "PageUp"].includes(e.key)) { e.preventDefault(); dir = -1; }
+      if (["ArrowDown", "PageDown", " "].includes(e.key)) dir = 1;
+      if (["ArrowUp", "PageUp"].includes(e.key)) dir = -1;
       if (!dir) return;
-      if (isTweeningRef.current && targetSectionRef.current === sectionRef.current + dir) return;
-      goToSection(sectionRef.current + dir);
+
+      if (shouldReEngage(dir)) {
+        e.preventDefault();
+        atTerminalRef.current = null;
+        releaseStateRef.current = "idle";
+        if (!isTweeningRef.current) {
+          const next = sectionRef.current + dir;
+          if (next >= 0 && next < TOTAL_SECTIONS) goToSection(next);
+        }
+        return;
+      }
+
+      if (isAtTerminal(dir)) {
+        beginRelease();
+        return;
+      }
+
+      e.preventDefault();
+      if (isTweeningRef.current) return;
+      const next = sectionRef.current + dir;
+      if (next >= 0 && next < TOTAL_SECTIONS) goToSection(next);
     };
+
     const onPointerDown = () => markInteracted();
     const onMouseDown = () => markInteracted();
+
+    window.addEventListener("wheel", onWheel, { passive: false });
+    window.addEventListener("touchstart", onTS, { passive: true });
+    window.addEventListener("touchmove", onTM, { passive: false });
+    window.addEventListener("touchend", onTE, { passive: true });
+    window.addEventListener("keydown", onKD);
+
     const el = containerRef.current;
-    el?.addEventListener("wheel", onWheel, { passive: false });
-    el?.addEventListener("touchstart", onTS, { passive: true });
-    el?.addEventListener("touchend", onTE, { passive: true });
     el?.addEventListener("pointerdown", onPointerDown, { passive: true });
     el?.addEventListener("mousedown", onMouseDown, { passive: true });
-    window.addEventListener("keydown", onKD);
+
     return () => {
-      el?.removeEventListener("wheel", onWheel);
-      el?.removeEventListener("touchstart", onTS);
-      el?.removeEventListener("touchend", onTE);
+      window.removeEventListener("wheel", onWheel);
+      window.removeEventListener("touchstart", onTS);
+      window.removeEventListener("touchmove", onTM);
+      window.removeEventListener("touchend", onTE);
+      window.removeEventListener("keydown", onKD);
       el?.removeEventListener("pointerdown", onPointerDown);
       el?.removeEventListener("mousedown", onMouseDown);
-      window.removeEventListener("keydown", onKD);
     };
-  }, [loading, goToSection, playVideoSafely, unlockSafariVideos]);
+  }, [loading, goToSection, playVideoSafely, unlockSafariVideos, beginRelease]);
+
+  /* ==================== THREE.JS SETUP ==================== */
 
   const initScene = useCallback(() => {
     const scene = new THREE.Scene();
@@ -810,10 +944,7 @@ export default function Scroll3DCanva() {
     const d = isMob ? 3 : 15;
     Object.assign(sl.shadow.camera, { left: -d, right: d, top: d, bottom: -d });
     scene.add(sl); scene.add(new THREE.AmbientLight(0xffffff, 0.8));
-    const ground = new THREE.Mesh(
-      new THREE.PlaneGeometry(100, 100),
-      new THREE.ShadowMaterial({ opacity: 0.5, transparent: true })
-    );
+    const ground = new THREE.Mesh(new THREE.PlaneGeometry(100, 100), new THREE.ShadowMaterial({ opacity: 0.5, transparent: true }));
     ground.rotation.x = -Math.PI / 2; ground.position.y = -100; ground.receiveShadow = true;
     groundRef.current = ground; scene.add(ground); sceneRef.current = scene;
   }, []);
@@ -822,11 +953,7 @@ export default function Scroll3DCanva() {
     if (!canvasRef.current || rendererRef.current) return;
     const safari = isSafari(), ios = isIOS(), macos = isMacOS();
     safariRef.current = safari; iosRef.current = ios; macosRef.current = macos;
-    const r = new THREE.WebGLRenderer({
-      canvas: canvasRef.current, antialias: !ios, alpha: false,
-      powerPreference: "high-performance", precision: ios ? "mediump" : "highp",
-      preserveDrawingBuffer: (ios || (safari && macos)) ? true : false,
-    });
+    const r = new THREE.WebGLRenderer({ canvas: canvasRef.current, antialias: !ios, alpha: false, powerPreference: "high-performance", precision: ios ? "mediump" : "highp", preserveDrawingBuffer: (ios || (safari && macos)) ? true : false });
     r.setPixelRatio(Math.min(window.devicePixelRatio, ios ? 1.5 : CONFIG.RENDERER.MAX_PIXEL_RATIO));
     r.setSize(window.innerWidth, window.innerHeight);
     r.outputColorSpace = THREE.SRGBColorSpace;
@@ -857,44 +984,22 @@ export default function Scroll3DCanva() {
     const vd = videosRef.current[idx - 1], mesh = screenMeshRef.current;
     if (!vd || !mesh) return;
     videosRef.current.forEach((v, i) => { if (i !== idx - 1) { v.video.pause(); v.video.currentTime = 0; } });
-    mesh.material = new THREE.MeshStandardMaterial({
-      map: vd.texture, emissive: new THREE.Color(0xffffff), emissiveMap: vd.texture,
-      emissiveIntensity: 1.0, roughness: 0.5, metalness: 0.0, transparent: false, depthWrite: true,
-    });
-    // On Safari/iOS, video cannot start until a user gesture — queue it.
-    // On all other browsers, start immediately (muted autoplay is allowed).
-    if (needsSafariVideoUnlock() && !safariVideoUnlockedRef.current) {
-      pendingVideoIdxRef.current = idx;
-      vd.video.load(); // pre-buffer while waiting for gesture
-    } else {
-      playVideoSafely(vd.video);
-    }
+    mesh.material = new THREE.MeshStandardMaterial({ map: vd.texture, emissive: new THREE.Color(0xffffff), emissiveMap: vd.texture, emissiveIntensity: 1.0, roughness: 0.5, metalness: 0.0, transparent: false, depthWrite: true });
+    if (needsSafariVideoUnlock() && !safariVideoUnlockedRef.current) { pendingVideoIdxRef.current = idx; vd.video.load(); }
+    else { playVideoSafely(vd.video); }
   }, [playVideoSafely]);
 
   const setupVideos = useCallback((model: THREE.Group) => {
     const ios = iosRef.current;
-    for (const vc of CONFIG.VIDEOS) {
-      const vd = createVideoTexture(vc.path, ios);
-      if (vd) { videosRef.current.push(vd); setTimeout(() => vd.video.load(), 0); }
-    }
-    // Anchor mesh names must be excluded — "screen_text" contains "screen" and
-    // would incorrectly match the screen detection if we use .includes()
+    for (const vc of CONFIG.VIDEOS) { const vd = createVideoTexture(vc.path, ios); if (vd) { videosRef.current.push(vd); setTimeout(() => vd.video.load(), 0); } }
     const anchorNames = CONFIG.ANNOTATION_ANCHOR_MESHES.map(n => n.toLowerCase());
     model.traverse(child => {
       if (!(child as THREE.Mesh).isMesh) return;
-      const mesh = child as THREE.Mesh;
-      const nameLc = child.name.toLowerCase();
-      if (anchorNames.some(an => nameLc === an)) return; // skip helper anchors
-      if (
-        nameLc === CONFIG.SCREEN.MESH_NAME.toLowerCase() ||
-        (mesh.material as any)?.name?.toLowerCase().includes(CONFIG.SCREEN.MATERIAL_NAME.toLowerCase())
-      ) {
-        screenMeshRef.current = mesh;
-        console.log("[Screen mesh found]", child.name);
-      }
+      const mesh = child as THREE.Mesh; const nameLc = child.name.toLowerCase();
+      if (anchorNames.some(an => nameLc === an)) return;
+      if (nameLc === CONFIG.SCREEN.MESH_NAME.toLowerCase() || (mesh.material as any)?.name?.toLowerCase().includes(CONFIG.SCREEN.MATERIAL_NAME.toLowerCase())) { screenMeshRef.current = mesh; }
     });
     if (screenMeshRef.current && videosRef.current.length > 0) applyVideoToScreen(1);
-    else console.warn("[setupVideos] screen mesh not found or no videos");
   }, [applyVideoToScreen]);
 
   const setupWheelMeshes = useCallback((model: THREE.Group) => {
@@ -914,31 +1019,12 @@ export default function Scroll3DCanva() {
 
   const setupConnectorMeshes = useCallback((model: THREE.Group) => {
     const names = CONFIG.TEXT_ANNOTATIONS.map(a => (a as any).meshName as string);
-    model.traverse(child => { if ((child as THREE.Mesh).isMesh) console.log("[GLB mesh]", child.name); });
-    model.traverse(child => {
-      const lc = child.name.toLowerCase();
-      names.forEach((name, idx) => {
-        if (!connectorMeshRefs.current[idx] && lc === name.toLowerCase()) {
-          connectorMeshRefs.current[idx] = child;
-          console.log(`[Connector matched] annotation[${idx}] => "${child.name}"`);
-        }
-      });
-    });
+    model.traverse(child => { const lc = child.name.toLowerCase(); names.forEach((name, idx) => { if (!connectorMeshRefs.current[idx] && lc === name.toLowerCase()) { connectorMeshRefs.current[idx] = child; } }); });
   }, []);
 
-  /**
-   * Find wheel_text and screen_text meshes, hide them, and store refs.
-   * Their world positions are projected each frame to anchor desktop cards.
-   */
   const setupAnnotationAnchors = useCallback((model: THREE.Group) => {
     CONFIG.ANNOTATION_ANCHOR_MESHES.forEach((anchorName, idx) => {
-      model.traverse(child => {
-        if (!annotationAnchorRefs.current[idx] && child.name.toLowerCase() === anchorName.toLowerCase()) {
-          child.visible = false; // ← hidden in scene
-          annotationAnchorRefs.current[idx] = child;
-          console.log(`[Anchor] hidden "${child.name}" => annotation[${idx}]`);
-        }
-      });
+      model.traverse(child => { if (!annotationAnchorRefs.current[idx] && child.name.toLowerCase() === anchorName.toLowerCase()) { child.visible = false; annotationAnchorRefs.current[idx] = child; } });
     });
   }, []);
 
@@ -946,27 +1032,20 @@ export default function Scroll3DCanva() {
     if (!modelRef.current) return;
     const dt = getDeviceType();
     if (dtRef.current !== dt) { dtRef.current = dt; setDeviceType(dt); updatePop01Visibility(dt); }
-    const s = CONFIG.MODEL.SCALE[dt];
-    modelRef.current.scale.set(s, s, s);
-    centerModel(modelRef.current, dt);
+    const s = CONFIG.MODEL.SCALE[dt]; modelRef.current.scale.set(s, s, s); centerModel(modelRef.current, dt);
     const box = new THREE.Box3().setFromObject(modelRef.current);
     if (groundRef.current) groundRef.current.position.y = box.min.y;
-    if (cameraRef.current) {
-      cameraRef.current.position.z = origCamZRef.current * (dt === "sm" ? 5 : dt === "md" ? 4 : dt === "lg" ? 2 : 2);
-      cameraRef.current.aspect = window.innerWidth / window.innerHeight;
-      cameraRef.current.updateProjectionMatrix();
-    }
+    if (cameraRef.current) { cameraRef.current.position.z = origCamZRef.current * (dt === "sm" ? 5 : dt === "md" ? 4 : dt === "lg" ? 2 : 2); cameraRef.current.aspect = window.innerWidth / window.innerHeight; cameraRef.current.updateProjectionMatrix(); }
   }, [updatePop01Visibility]);
 
   const loadModel = useCallback(() => {
     if (!sceneRef.current || !rendererRef.current) return;
     const dracoLoader = new DRACOLoader();
     dracoLoader.setDecoderPath("https://www.gstatic.com/draco/versioned/decoders/1.5.6/");
-    const loader = new GLTFLoader();
-    loader.setDRACOLoader(dracoLoader);
-    loader.load(CONFIG.MODEL.PATH,
+    const loader = new GLTFLoader(); loader.setDRACOLoader(dracoLoader);
+    loader.load(
+      CONFIG.MODEL.PATH,
       gltf => {
-        setLoadProgress(100);
         const model = gltf.scene; modelRef.current = model;
         if (gltf.cameras?.length) {
           const gc = gltf.cameras[0];
@@ -985,18 +1064,14 @@ export default function Scroll3DCanva() {
           if (!(child as THREE.Mesh).isMesh) return;
           const mesh = child as THREE.Mesh; mesh.castShadow = true; mesh.receiveShadow = true;
           const isScreen = child.name.toLowerCase().includes(CONFIG.SCREEN.MESH_NAME.toLowerCase());
-          for (const m of (Array.isArray(mesh.material) ? mesh.material : [mesh.material]))
-            optimizeMaterial(m, rendererRef.current!, isScreen);
+          for (const m of (Array.isArray(mesh.material) ? mesh.material : [mesh.material])) optimizeMaterial(m, rendererRef.current!, isScreen);
         });
         const dt = getDeviceType(), s = CONFIG.MODEL.SCALE[dt];
         model.scale.set(s, s, s); centerModel(model, dt);
         const box = new THREE.Box3().setFromObject(model);
         if (groundRef.current) groundRef.current.position.y = box.min.y;
         sceneRef.current!.add(model);
-        setupVideos(model);
-        setupWheelMeshes(model);
-        setupConnectorMeshes(model);
-        setupAnnotationAnchors(model); // hide anchor meshes & capture refs
+        setupVideos(model); setupWheelMeshes(model); setupConnectorMeshes(model); setupAnnotationAnchors(model);
         if (gltf.animations.length) {
           const mixer = new THREE.AnimationMixer(model);
           const action = mixer.clipAction(gltf.animations[0]);
@@ -1005,16 +1080,21 @@ export default function Scroll3DCanva() {
         }
         gsapFrameObj.current.value = 0; renderFrameRef.current = 0; sectionRef.current = 0;
         dracoLoader.dispose();
-        setTimeout(() => { setPreloaderVisible(false); setTimeout(() => setLoading(false), 700); }, 400);
+        setLoading(false);
+        setModelProgress(100);
+        ScrollTrigger.refresh();
       },
-      (evt: ProgressEvent) => {
-        if (evt.lengthComputable && evt.total > 0) setLoadProgress(Math.min(95, Math.round((evt.loaded / evt.total) * 95)));
-        else setLoadProgress(p => Math.min(p + 1, 85));
+      (xhr) => {
+        if (xhr && xhr.lengthComputable) {
+          const percent = Math.round((xhr.loaded / xhr.total) * 100);
+          setModelProgress(percent);
+        }
       },
-      err => { console.error(err); dracoLoader.dispose(); setError("Failed to load 3D model."); setLoading(false); setPreloaderVisible(false); }
+      err => { console.error(err); dracoLoader.dispose(); setError("Failed to load 3D model."); setLoading(false); setModelProgress(100); }
     );
   }, [setupVideos, setupWheelMeshes, setupConnectorMeshes, setupAnnotationAnchors, updatePop01Visibility]);
 
+  /* ==================== RENDER LOOP ==================== */
   useEffect(() => {
     const LERP = 10, SNAP = 0.005;
     let rafId: number, lastT = performance.now();
@@ -1030,14 +1110,9 @@ export default function Scroll3DCanva() {
       renderFrameRef.current = lerpSettled ? target : renderFrameRef.current + diff * Math.min(LERP * dt, 1);
       const frame = renderFrameRef.current;
       let red = false;
-      for (const a of CONFIG.TEXT_ANNOTATIONS)
-        if (frame >= a.frameStart && frame <= a.frameEnd && (a as any).triggerWheelColorChange) { red = true; break; }
+      for (const a of CONFIG.TEXT_ANNOTATIONS) if (frame >= a.frameStart && frame <= a.frameEnd && (a as any).triggerWheelColorChange) { red = true; break; }
       if (red !== isWheelRedRef.current) { setWheelRed(red); isWheelRedRef.current = red; }
-      if (mixerRef.current && actionRef.current) {
-        const clip = actionRef.current.getClip();
-        actionRef.current.time = (frame / CONFIG.TOTAL_FRAMES) * clip.duration;
-        mixerRef.current.update(0);
-      }
+      if (mixerRef.current && actionRef.current) { const clip = actionRef.current.getClip(); actionRef.current.time = (frame / CONFIG.TOTAL_FRAMES) * clip.duration; mixerRef.current.update(0); }
       const vd = videosRef.current[activeVideoRef.current - 1];
       const minReadyState = (iosRef.current || (safariRef.current && macosRef.current)) ? 4 : 2;
       if (vd && !vd.video.paused && vd.video.readyState >= minReadyState) vd.texture.needsUpdate = true;
@@ -1045,27 +1120,16 @@ export default function Scroll3DCanva() {
       rendererRef.current.render(sceneRef.current, cameraRef.current);
       const cam = cameraRef.current;
 
-      // ── Connector lines (mobile/tablet) ──────────────────────────────────
       setConnectors(prev => {
         let dirty = false;
         const next: ConnectorState[] = prev.map((c, i) => {
-          const ann = CONFIG.TEXT_ANNOTATIONS[i];
-          const inRange = frame >= ann.frameStart && frame <= ann.frameEnd;
-          if (!inRange) {
-            if (!c.meshPt.ok) return c;
-            dirty = true;
-            return { ...c, meshPt: { ...c.meshPt, ok: false } };
-          }
+          const ann = CONFIG.TEXT_ANNOTATIONS[i]; const inRange = frame >= ann.frameStart && frame <= ann.frameEnd;
+          if (!inRange) { if (!c.meshPt.ok) return c; dirty = true; return { ...c, meshPt: { ...c.meshPt, ok: false } }; }
           const meshObj = i === 1 ? (connectorMeshRefs.current[i] ?? screenMeshRef.current) : connectorMeshRefs.current[i];
           if (!meshObj) return c;
           const projected = i === 1 ? toScreenBottomCenter(meshObj, cam) : toScreen(meshObj, cam);
-          if (!projected) {
-            if (!c.meshPt.ok) return c;
-            dirty = true;
-            return { ...c, meshPt: { ...c.meshPt, ok: false } };
-          }
-          const cardEl = annCardRefs.current[i];
-          let ax = c.cardPt.x, ay = c.cardPt.y;
+          if (!projected) { if (!c.meshPt.ok) return c; dirty = true; return { ...c, meshPt: { ...c.meshPt, ok: false } }; }
+          const cardEl = annCardRefs.current[i]; let ax = c.cardPt.x, ay = c.cardPt.y;
           if (cardEl) { const rect = cardEl.getBoundingClientRect(); ax = rect.left + rect.width / 2; ay = rect.top; }
           if (c.meshPt.ok && Math.abs(c.meshPt.x - projected.x) < 0.5 && Math.abs(c.meshPt.y - projected.y) < 0.5 && Math.abs(c.cardPt.x - ax) < 0.5 && Math.abs(c.cardPt.y - ay) < 0.5) return c;
           dirty = true;
@@ -1074,37 +1138,15 @@ export default function Scroll3DCanva() {
         return dirty ? next : prev;
       });
 
-      // ── Anchor screen positions (desktop annotation placement) ────────────
-      // Snapshot the hidden anchor mesh position ONCE on the first frame it
-      // enters range, then LOCK it for the entire annotation window.
-      // This prevents the card from drifting as the camera continues to move.
       setAnchorScreenPts(prev => {
         let dirty = false;
         const next: ScreenPt[] = prev.map((pt, i) => {
-          const ann = CONFIG.TEXT_ANNOTATIONS[i];
-          const anchorObj = annotationAnchorRefs.current[i];
-          // Hide as soon as navigation STARTS (targetSectionRef changes),
-          // not just when the tween completes. This eliminates the ghost
-          // reappearance between sections.
-          const visibleAt = (ann as any).visibleAtSection;
-          const navigationAway = targetSectionRef.current !== visibleAt;
-          const fullySettled = !isTweeningRef.current && lerpSettled &&
-            sectionRef.current === visibleAt;
-
-          // If navigating away → clear snapshot immediately
-          if (navigationAway || !anchorObj) {
-            if (!pt.ok) return pt;
-            dirty = true;
-            return { x: pt.x, y: pt.y, ok: false };
-          }
-
-          // Already snapshotted and still on correct section → keep locked
+          const ann = CONFIG.TEXT_ANNOTATIONS[i]; const anchorObj = annotationAnchorRefs.current[i];
+          const visibleAt = (ann as any).visibleAtSection; const navigationAway = targetSectionRef.current !== visibleAt;
+          const fullySettled = !isTweeningRef.current && lerpSettled && sectionRef.current === visibleAt;
+          if (navigationAway || !anchorObj) { if (!pt.ok) return pt; dirty = true; return { x: pt.x, y: pt.y, ok: false }; }
           if (pt.ok) return pt;
-
-          // Only take snapshot when fully settled (tween done + lerp done)
           if (!fullySettled) return pt;
-
-          // Take one snapshot and lock
           const projected = toScreen(anchorObj, cam);
           if (!projected) return pt;
           dirty = true;
@@ -1136,13 +1178,13 @@ export default function Scroll3DCanva() {
       const dt = getDeviceType();
       if (dtRef.current !== dt) {
         dtRef.current = dt; setDeviceType(dt);
-        if (cameraRef.current instanceof THREE.PerspectiveCamera)
-          cameraRef.current.fov = dt === "sm" ? 80 : dt === "md" ? 60 : dt === "lg" ? 50 : 75;
+        if (cameraRef.current instanceof THREE.PerspectiveCamera) cameraRef.current.fov = dt === "sm" ? 80 : dt === "md" ? 60 : dt === "lg" ? 50 : 75;
         updateModelLayout(); updatePop01Visibility(dt);
       }
       cameraRef.current.aspect = window.innerWidth / window.innerHeight;
       cameraRef.current.updateProjectionMatrix();
       rendererRef.current.setSize(window.innerWidth, window.innerHeight);
+      ScrollTrigger.refresh();
     };
     window.addEventListener("resize", onResize);
     const canvas = canvasRef.current;
@@ -1156,120 +1198,94 @@ export default function Scroll3DCanva() {
       canvas?.removeEventListener("webglcontextrestored", onCR);
       tweenRef.current?.kill();
       if (cooldownTimerRef.current) clearTimeout(cooldownTimerRef.current);
-      for (const v of videosRef.current) {
-        v.video.pause(); v.video.removeAttribute("src"); v.video.load(); v.texture.dispose();
-        if (v.video.parentNode) v.video.parentNode.removeChild(v.video);
-      }
+      for (const v of videosRef.current) { v.video.pause(); v.video.removeAttribute("src"); v.video.load(); v.texture.dispose(); if (v.video.parentNode) v.video.parentNode.removeChild(v.video); }
       videosRef.current = [];
-      sceneRef.current?.traverse(obj => {
-        if (!(obj as THREE.Mesh).isMesh) return;
-        const m = obj as THREE.Mesh; m.geometry?.dispose();
-        for (const mat of (Array.isArray(m.material) ? m.material : [m.material])) mat.dispose();
-      });
+      sceneRef.current?.traverse(obj => { if (!(obj as THREE.Mesh).isMesh) return; const m = obj as THREE.Mesh; m.geometry?.dispose(); for (const mat of (Array.isArray(m.material) ? m.material : [m.material])) mat.dispose(); });
       sceneRef.current?.clear();
       rendererRef.current?.forceContextLoss(); rendererRef.current?.dispose(); rendererRef.current = null;
       modelRef.current = null; mixerRef.current = null; actionRef.current = null;
-      pop01MeshRef.current = null;
-      connectorMeshRefs.current = [null, null, null, null];
-      annotationAnchorRefs.current = [null, null];
+      pop01MeshRef.current = null; connectorMeshRefs.current = [null, null, null, null]; annotationAnchorRefs.current = [null, null];
       wheelMeshesRef.current = []; wheelOriginalColorsRef.current.clear();
       initializedRef.current = false;
+      ScrollTrigger.getAll().forEach(t => t.kill());
     };
   }, [initScene, initRenderer, loadEnvironment, loadModel, updateModelLayout, updatePop01Visibility]);
 
-  const switchVideo = useCallback((idx: number) => {
-    activeVideoRef.current = idx; setActiveVideo(idx); applyVideoToScreen(idx);
-  }, [applyVideoToScreen]);
+  const switchVideo = useCallback((idx: number) => { activeVideoRef.current = idx; setActiveVideo(idx); applyVideoToScreen(idx); }, [applyVideoToScreen]);
 
   const handleDotClick = useCallback((idx: number) => {
-    hasUserInteractedRef.current = true;
-    unlockSafariVideos();
-    if (pendingVideoIdxRef.current !== null) {
-      const p = pendingVideoIdxRef.current; pendingVideoIdxRef.current = null;
-      const vd = videosRef.current[p - 1]; if (vd) playVideoSafely(vd.video);
+    hasUserInteractedRef.current = true; unlockSafariVideos();
+    if (pendingVideoIdxRef.current !== null) { const p = pendingVideoIdxRef.current; pendingVideoIdxRef.current = null; const vd = videosRef.current[p - 1]; if (vd) playVideoSafely(vd.video); }
+    releaseStateRef.current = "idle";
+    atTerminalRef.current = null;
+    const st = scrollTriggerRef.current;
+    if (st) {
+      st.scroll(st.start + PIN_SCROLL_DISTANCE * 0.5);
+      ScrollTrigger.update();
     }
     goToSection(idx);
   }, [goToSection, playVideoSafely, unlockSafariVideos]);
 
   const annotationElements = useMemo(() =>
     CONFIG.TEXT_ANNOTATIONS.map((a, i) => {
-      // Desktop: visible only when the anchor snapshot is locked (section settled)
-      // Mobile: visible based on frame range (connector line logic)
       const isDesktop = deviceType === "lg" || deviceType === "xl";
-      const isVisible = isDesktop
-        ? (anchorScreenPts[i]?.ok === true)
-        : visibleAnnotations.has(a.id);
-      return (
-        <TextAnnotation
-          key={a.id}
-          annotation={a}
-          isVisible={isVisible}
-          deviceType={deviceType}
-          cardRef={(el) => { annCardRefs.current[i] = el; }}
-          anchorScreenPt={anchorScreenPts[i]}
-        />
-      );
-    }),
-    [visibleAnnotations, deviceType, anchorScreenPts]);
+      const isVisible = isDesktop ? (anchorScreenPts[i]?.ok === true) : visibleAnnotations.has(a.id);
+      return (<TextAnnotation key={a.id} annotation={a} isVisible={isVisible} deviceType={deviceType} cardRef={(el) => { annCardRefs.current[i] = el; }} anchorScreenPt={anchorScreenPts[i]} />);
+    }), [visibleAnnotations, deviceType, anchorScreenPts]);
 
+  const [modelProgress, setModelProgress] = useState(0);
   return (
-    <div
-      ref={containerRef}
-      className="relative h-screen w-screen overflow-hidden"
-      style={{ touchAction: "none", WebkitOverflowScrolling: "touch", position: "relative" }}
-    >
-      <div className="fixed inset-0 w-full h-full">
-        <canvas ref={canvasRef} className="w-full h-full" style={{ display: "block" }} />
-      </div>
+    <>
+      <Preloader progress={modelProgress} visible={loading} />
+      <div
+        ref={pinSectionRef}
+        style={{
+          height: `calc(100vh - ${NAV_HEIGHT}px)`,
+          width: "100%",
+          position: "relative",
+          overflow: "hidden",
+        }}
+      >
+        <div
+          ref={containerRef}
+          className="relative w-full h-full overflow-hidden"
+     
+        >
+          <canvas ref={canvasRef} className="w-full h-full" style={{ display: "block" }} />
 
-      {CONFIG.TEXT_ANNOTATIONS.map((a, i) => (
-        <ConnectorLine
-          key={a.id}
-          meshPt={connectors[i].meshPt}
-          cardPt={connectors[i].cardPt}
-          visible={visibleAnnotations.has(a.id)}
-          deviceType={deviceType}
-        />
-      ))}
+          {CONFIG.TEXT_ANNOTATIONS.map((a, i) => (
+            <ConnectorLine key={a.id} meshPt={connectors[i].meshPt} cardPt={connectors[i].cardPt} visible={visibleAnnotations.has(a.id)} deviceType={deviceType} />
+          ))}
 
-      {annotationElements}
+          {annotationElements}
 
-      <div className="fixed right-4 top-1/2 -translate-y-1/2 z-50 flex flex-col gap-3">
-        {STOP_FRAMES.map((_, idx) => (
-          <button
-            key={idx}
-            onClick={() => handleDotClick(idx)}
-            className={`w-3 h-3 rounded-full transition-all duration-300 ${currentSection === idx ? "bg-red-600 scale-125" : "bg-gray-400 hover:bg-gray-600"}`}
-            aria-label={`Go to section ${idx + 1}`}
-          />
-        ))}
-      </div>
-
-      <Preloader progress={loadProgress} visible={preloaderVisible} />
-
-      {error && (
-        <div className="fixed inset-0 flex items-center justify-center z-50 bg-black/80">
-          <div className="text-red-500 text-xl max-w-md text-center p-4">{error}</div>
-        </div>
-      )}
-
-      {showButtons && !loading && !error && (
-        <div className="fixed top-4 md:top-5 left-0 right-0 z-[9999] px-2 md:px-0 pointer-events-none">
-          <div className="max-w-7xl mx-auto flex justify-center pointer-events-auto">
-            <div className="bg-white rounded-full p-1 shadow-lg inline-flex items-center gap-1">
-              {CONFIG.VIDEOS.map(video => (
-                <button
-                  key={video.id}
-                  onClick={() => switchVideo(video.id)}
-                  className={`px-5 md:px-6 py-2 md:py-2.5 rounded-full font-medium text-sm md:text-base transition-all duration-300 ease-out ${activeVideo === video.id ? "bg-red-600 text-white shadow-md" : "bg-transparent text-gray-700 hover:bg-gray-100"}`}
-                >
-                  <span className="whitespace-nowrap">{video.name}</span>
-                </button>
-              ))}
-            </div>
+          <div className="absolute right-4 top-1/2 -translate-y-1/2 z-50 flex flex-col gap-3">
+            {STOP_FRAMES.map((_, idx) => (
+              <button key={idx} onClick={() => handleDotClick(idx)} className={`w-3 h-3 rounded-full transition-all duration-300 ${currentSection === idx ? "bg-red-600 scale-125" : "bg-gray-400 hover:bg-gray-600"}`} aria-label={`Go to section ${idx + 1}`} />
+            ))}
           </div>
+
+          {error && (
+            <div className="absolute inset-0 flex items-center justify-center z-50 bg-black/80">
+              <div className="text-red-500 text-xl max-w-md text-center p-4">{error}</div>
+            </div>
+          )}
+
+          {showButtons && !loading && !error && (
+            <div className="absolute top-22 left-0 right-0 z-[9999] px-2 md:px-0 pointer-events-none">
+              <div className="max-w-7xl mx-auto flex justify-center pointer-events-auto">
+                <div className="bg-white rounded-full p-1 shadow-lg inline-flex items-center gap-1">
+                  {CONFIG.VIDEOS.map(video => (
+                    <button key={video.id} onClick={() => switchVideo(video.id)} className={`px-5 md:px-6 py-2 md:py-2.5 rounded-full font-medium text-sm md:text-base transition-all duration-300 ease-out ${activeVideo === video.id ? "bg-red-600 text-white shadow-md" : "bg-transparent text-gray-700 hover:bg-gray-100"}`}>
+                      <span className="whitespace-nowrap">{video.name}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
         </div>
-      )}
-    </div>
+      </div>
+    </>
   );
 }
