@@ -75,7 +75,7 @@ const TOTAL_SECTIONS = STOP_FRAMES.length;
 
 /* ==================== LAYOUT ==================== */
 const NAV_HEIGHT          = 62;   // px — keep in sync with Topnav
-const VH_PER_SECTION      = 120;  // viewport-heights per transition
+const VH_PER_SECTION      = 130;  // viewport-heights per transition
 const LERP_SPEED          = 8;    // render-loop lerp factor (higher = snappier)
 const SNAP_THRESHOLD      = 0.5;  // frame units
 const EXTRA_TAIL_SCROLL   = 0.5;    // Adds an extra 1 segment of scroll distance at the very end
