@@ -21,7 +21,7 @@ const needsSafariVideoUnlock = () => isSafari() || isIOS();
 const CONFIG = {
   TOTAL_FRAMES: 130,
   MODEL: {
-    PATH: "https://s3.us-east-1.amazonaws.com/sportstech.team/dev_assets/Sbikedraft.glb",
+    PATH: "https://s3.us-east-1.amazonaws.com/sportstech.team/dev_assets/FINAL5.glb",
     SCALE: { sm: 0.04, md: 0.06, lg: 0.4, xl: 1.0 },
     MOBILE_POSITION:  { y: -1.5, x: 0, z: 0 },
     TABLET_POSITION:  { y: -1.8, x: 0, z: 0 },
@@ -74,11 +74,11 @@ const STOP_FRAMES   = [0, ...CONFIG.TEXT_ANNOTATIONS.map(a => a.stopFrame), CONF
 const TOTAL_SECTIONS = STOP_FRAMES.length;
 
 /* ==================== LAYOUT ==================== */
-const NAV_HEIGHT          = 62;   // px — keep in sync with Topnav
-const VH_PER_SECTION      = 130;  // viewport-heights per transition
-const LERP_SPEED          = 8;    // render-loop lerp factor (higher = snappier)
-const SNAP_THRESHOLD      = 0.5;  // frame units
-const EXTRA_TAIL_SCROLL   = 0.5;    // Adds an extra 1 segment of scroll distance at the very end
+const NAV_HEIGHT          = 62;
+const VH_PER_SECTION      = 130;
+const LERP_SPEED          = 8;
+const SNAP_THRESHOLD      = 0.5;
+const EXTRA_TAIL_SCROLL   = 0.5;
 const SCROLL_SEGMENTS     = (TOTAL_SECTIONS - 1) + EXTRA_TAIL_SCROLL;
 
 /* ==================== TYPES ==================== */
@@ -110,8 +110,11 @@ const centerModel = (model: THREE.Group, dt: DeviceType) => {
   model.position.set(pos.x - center.x, pos.y - size.y / 2, pos.z - center.z);
 };
 
+/* [FIX 1] Guard null renderer + cap anisotropy on iOS */
 const optimizeTexture = (tex: THREE.Texture, r: THREE.WebGLRenderer) => {
-  tex.anisotropy    = r.capabilities.getMaxAnisotropy();
+  if (!r) return;
+  const maxAniso = r.capabilities.getMaxAnisotropy();
+  tex.anisotropy    = isIOS() ? Math.min(maxAniso, 4) : maxAniso;
   tex.minFilter     = THREE.LinearMipmapLinearFilter;
   tex.magFilter     = THREE.LinearFilter;
   tex.generateMipmaps = true;
@@ -119,8 +122,9 @@ const optimizeTexture = (tex: THREE.Texture, r: THREE.WebGLRenderer) => {
   tex.needsUpdate   = true;
 };
 
+/* [FIX 2] Guard null renderer */
 const optimizeMaterial = (mat: THREE.Material, r: THREE.WebGLRenderer, isVideo = false) => {
-  if (!mat) return;
+  if (!mat || !r) return;
   const m = mat as any;
   if (!isVideo && m.map) optimizeTexture(m.map, r);
   if (m.isMeshStandardMaterial || m.isMeshPhysicalMaterial) {
@@ -137,7 +141,8 @@ const createVideoTexture = (path: string) => {
     const video = document.createElement("video");
     video.setAttribute("playsinline", "");
     video.setAttribute("webkit-playsinline", "");
-    video.setAttribute("preload", needsSafariVideoUnlock() ? "auto" : "metadata");
+    /* [FIX 3] Use "none" preload on iOS to avoid early GPU memory allocation */
+    video.setAttribute("preload", isIOS() ? "none" : (needsSafariVideoUnlock() ? "auto" : "metadata"));
     video.setAttribute("x-webkit-airplay", "deny");
     video.muted = true; video.loop = true; video.playsInline = true;
     video.autoplay = false; video.crossOrigin = "anonymous";
@@ -152,7 +157,7 @@ const createVideoTexture = (path: string) => {
     texture.colorSpace = THREE.SRGBColorSpace;
     texture.minFilter  = THREE.LinearFilter;
     texture.magFilter  = THREE.LinearFilter;
-    texture.format     = THREE.RGBAFormat;
+    /* [FIX 4] Remove explicit RGBAFormat — let Three.js auto-detect (Safari prefers RGB) */
     texture.flipY      = false;
     return { video, texture };
   } catch { return null; }
@@ -319,6 +324,139 @@ const TextAnnotation: React.FC<AnnotationProps> = (props) =>
     ? <TextAnnotationMobile {...props} />
     : <TextAnnotationDesktop {...props} />;
 
+/* ==================== NATURAL CONTACT SHADOW (mobile/iOS only) ==================== */
+/**
+ * Creates a lightweight, natural-looking soft contact shadow for iOS/mobile.
+ * Uses a radial-gradient canvas texture on a flat plane — no render-to-texture,
+ * no per-frame GPU reads. The shadow is a soft elliptical gradient that sits
+ * under the bike, mimicking diffused ambient light (like product photography).
+ * It tracks the model bounding box each frame (position + scale only, very cheap).
+ */
+interface DynamicContactShadow {
+  group: THREE.Group;
+  update: () => void;
+  dispose: () => void;
+}
+
+function createNaturalContactShadow(
+  model: THREE.Group,
+  scene: THREE.Scene,
+): DynamicContactShadow | null {
+  try {
+    const box = new THREE.Box3().setFromObject(model);
+    const size = box.getSize(new THREE.Vector3());
+    const center = box.getCenter(new THREE.Vector3());
+
+    // Shadow plane dimensions — slightly wider than the model for natural spread
+    const shadowW = size.x * 1.15;
+    const shadowD = size.z * 1.6;
+
+    // Guard: if model has zero footprint, skip shadow
+    if (shadowW <= 0 || shadowD <= 0) return null;
+
+    // Create soft radial gradient shadow texture on a canvas
+    const RES = 128;
+    const cvs = document.createElement("canvas");
+    cvs.width = RES; cvs.height = RES;
+    const ctx = cvs.getContext("2d");
+    if (!ctx) return null; // iOS can return null under memory pressure
+
+    // Draw a soft elliptical radial gradient
+    // Center is darkest (but still subtle), edges fade to transparent
+    const cx = RES / 2;
+    const cy = RES / 2;
+    const rx = RES / 2;  // horizontal radius
+    const ry = RES / 2;  // vertical radius
+
+    // We draw the gradient using a circle, then scale to ellipse
+    ctx.save();
+    ctx.scale(1, ry / rx);
+    const grad = ctx.createRadialGradient(cx, cx, 0, cx, cx, rx);
+    // Very subtle — the darkest center is only ~22% opaque black
+    grad.addColorStop(0,    "rgba(0, 0, 0, 0.22)");
+    grad.addColorStop(0.15, "rgba(0, 0, 0, 0.18)");
+    grad.addColorStop(0.35, "rgba(0, 0, 0, 0.12)");
+    grad.addColorStop(0.55, "rgba(0, 0, 0, 0.07)");
+    grad.addColorStop(0.75, "rgba(0, 0, 0, 0.03)");
+    grad.addColorStop(1,    "rgba(0, 0, 0, 0.0)");
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, RES, RES);
+    ctx.restore();
+
+    const shadowTex = new THREE.CanvasTexture(cvs);
+    shadowTex.needsUpdate = true;
+
+    const shadowGeo = new THREE.PlaneGeometry(shadowW, shadowD);
+    const shadowMat = new THREE.MeshBasicMaterial({
+      map: shadowTex,
+      transparent: true,
+      opacity: 1.0,
+      depthWrite: false,
+      polygonOffset: true,
+      polygonOffsetFactor: -1,
+      polygonOffsetUnits: -1,
+    });
+    const shadowMesh = new THREE.Mesh(shadowGeo, shadowMat);
+    shadowMesh.rotation.x = -Math.PI / 2;
+    shadowMesh.position.set(center.x, box.min.y + 0.001, center.z);
+
+    const shadowGroup = new THREE.Group();
+    shadowGroup.add(shadowMesh);
+    scene.add(shadowGroup);
+
+    // Store initial dimensions for scaling reference
+    const initW = shadowW;
+    const initD = shadowD;
+
+    const update = () => {
+      // Guard: model may have been disposed
+      if (!model.parent) return;
+
+      try {
+        // Just track position + size — no GPU work at all
+        const currentBox = new THREE.Box3().setFromObject(model);
+        const currentCenter = currentBox.getCenter(new THREE.Vector3());
+        const currentSize = currentBox.getSize(new THREE.Vector3());
+
+        // Guard against degenerate bounding box
+        if (!isFinite(currentCenter.x) || !isFinite(currentCenter.y) || !isFinite(currentCenter.z)) return;
+
+        // Keep shadow plane at the bottom of the model
+        shadowMesh.position.set(
+          currentCenter.x,
+          currentBox.min.y + 0.001,
+          currentCenter.z
+        );
+
+        // Scale shadow to match current model footprint (guard division by zero)
+        const curW = currentSize.x * 1.15;
+        const curD = currentSize.z * 1.6;
+        if (initW > 0 && initD > 0 && curW > 0 && curD > 0) {
+          shadowMesh.scale.set(curW / initW, curD / initD, 1);
+        }
+      } catch {
+        // Silently ignore — model may be mid-disposal
+      }
+    };
+
+    const dispose = () => {
+      try {
+        shadowTex.dispose();
+        shadowGeo.dispose();
+        shadowMat.dispose();
+        if (shadowGroup.parent) shadowGroup.parent.remove(shadowGroup);
+      } catch {
+        // Silently ignore disposal errors
+      }
+    };
+
+    return { group: shadowGroup, update, dispose };
+  } catch (e) {
+    console.warn("[sBike] Failed to create contact shadow:", e);
+    return null;
+  }
+}
+
 /* ==================== MAIN COMPONENT ==================== */
 export default function Scrollfast() {
   const containerRef  = useRef<HTMLDivElement>(null);
@@ -342,7 +480,11 @@ export default function Scrollfast() {
   const screenMeshRef = useRef<THREE.Mesh | null>(null);
   const activeVideoRef = useRef(1);
 
+  /* [FIX 5] Track loaded video indices for lazy-loading on iOS */
+  const loadedVideoIndicesRef = useRef<Set<number>>(new Set());
+
   const pop01MeshRef         = useRef<THREE.Object3D | null>(null);
+  const contactShadowRef     = useRef<DynamicContactShadow | null>(null);
   const connectorMeshRefs    = useRef<(THREE.Object3D | null)[]>([null, null, null, null]);
   const annotationAnchorRefs = useRef<(THREE.Object3D | null)[]>([null, null]);
   const annCardRefs          = useRef<(HTMLDivElement | null)[]>([null, null, null, null]);
@@ -355,9 +497,12 @@ export default function Scrollfast() {
   const iosRef                = useRef(false);
   const macosRef              = useRef(false);
 
+  /* [FIX 6] Track mount state to guard async callbacks */
+  const mountedRef = useRef(true);
+
   // Scroll-driven state
-  const scrollProgressRef  = useRef(0);   // raw 0→1 from ScrollTrigger
-  const animFrameRef       = useRef(0);   // current rendered frame (lerped)
+  const scrollProgressRef  = useRef(0);
+  const animFrameRef       = useRef(0);
   const currentSectionRef  = useRef(0);
 
   const [loading,          setLoading]          = useState(true);
@@ -371,38 +516,22 @@ export default function Scrollfast() {
   const [connectors,       setConnectors]       = useState<ConnectorState[]>(CONFIG.TEXT_ANNOTATIONS.map(() => ({ meshPt:{x:0,y:0,ok:false}, cardPt:{x:0,y:0} })));
   const [anchorScreenPts,  setAnchorScreenPts]  = useState<ScreenPt[]>(CONFIG.TEXT_ANNOTATIONS.map(() => ({ x:0,y:0,ok:false })));
 
-  /* ── progress → frame (section-to-section mapping with smooth pause/plateaus) ── */
+  /* ── progress → frame ── */
   const progressToFrame = useCallback((p: number): number => {
     const sf = p * SCROLL_SEGMENTS;
-    
-    // Clamp to the final frame if the user is in the extra tail scroll area
-    if (sf >= TOTAL_SECTIONS - 1) {
-      return CONFIG.TOTAL_FRAMES;
-    }
-
+    if (sf >= TOTAL_SECTIONS - 1) return CONFIG.TOTAL_FRAMES;
     const idx  = Math.max(0, Math.floor(sf));
-    let t      = sf - idx; 
-
-    // Define a "hold" percentage (e.g., 60% of the scroll segment is fully paused)
-    const HOLD_RATIO = idx === 0 ? 0 : 0.6; 
-
-    if (t < HOLD_RATIO) {
-      t = 0; 
-    } else {
-      t = (t - HOLD_RATIO) / (1 - HOLD_RATIO);
-      t = t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
-    }
-
+    let t      = sf - idx;
+    const HOLD_RATIO = idx === 0 ? 0 : 0.6;
+    if (t < HOLD_RATIO) { t = 0; }
+    else { t = (t - HOLD_RATIO) / (1 - HOLD_RATIO); t = t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2; }
     return STOP_FRAMES[idx] + (STOP_FRAMES[idx + 1] - STOP_FRAMES[idx]) * t;
   }, []);
 
   /* ── progress → nearest settled section ── */
   const progressToSection = useCallback((p: number): number => {
     const sf = p * SCROLL_SEGMENTS;
-    
-    // Lock the navigation to the 4th dot while in the tail scroll
-    if (sf >= TOTAL_SECTIONS - 1) return TOTAL_SECTIONS - 1; 
-
+    if (sf >= TOTAL_SECTIONS - 1) return TOTAL_SECTIONS - 1;
     const n  = Math.round(sf);
     return Math.abs(sf - n) < 0.05 ? n : Math.floor(sf);
   }, []);
@@ -432,6 +561,7 @@ export default function Scrollfast() {
     if (safariVideoUnlockedRef.current || !needsSafariVideoUnlock()) return;
     safariVideoUnlockedRef.current = true;
     for (const vd of videosRef.current) {
+      if (!vd) continue; /* [FIX 7] Guard null placeholders */
       const p = vd.video.play();
       if (p) p.then(() => { if (vd !== videosRef.current[activeVideoRef.current - 1]) vd.video.pause(); }).catch(() => {});
     }
@@ -441,7 +571,7 @@ export default function Scrollfast() {
     video.muted = true;
     const attempt = (retries = 3) => {
       const promise = video.play();
-      if (promise) promise.catch(err => { if (retries > 0) setTimeout(() => { video.muted = true; attempt(retries - 1); }, 150); });
+      if (promise) promise.catch(() => { if (retries > 0) setTimeout(() => { video.muted = true; attempt(retries - 1); }, 150); });
     };
     if (video.readyState >= 3) { attempt(); }
     else {
@@ -458,7 +588,10 @@ export default function Scrollfast() {
     const sl = new THREE.DirectionalLight(0xffffff, 1.5);
     sl.position.set(1, 10, 0); sl.castShadow = true;
     const mob = typeof window !== "undefined" && window.innerWidth < 1024;
-    sl.shadow.mapSize.set(mob ? 1024 : 2048, mob ? 1024 : 2048);
+    /* [FIX 8] Reduce shadow map on iOS */
+    const isIOSDevice = isIOS();
+    const shadowSize = isIOSDevice ? 512 : (mob ? 1024 : 2048);
+    sl.shadow.mapSize.set(shadowSize, shadowSize);
     sl.shadow.camera.near = 0.2; sl.shadow.camera.far = 20;
     sl.shadow.bias = 1e-8; sl.shadow.normalBias = 1e-8;
     const d = mob ? 3 : 15;
@@ -469,33 +602,110 @@ export default function Scrollfast() {
     groundRef.current = ground; scene.add(ground); sceneRef.current = scene;
   }, []);
 
+  /* [FIX 9] Test GL context + try/catch */
   const initRenderer = useCallback(() => {
-    if (!canvasRef.current || rendererRef.current) return;
+    if (!canvasRef.current) return;
+    if (rendererRef.current) { rendererRef.current.dispose(); rendererRef.current = null; }
     const safari = isSafari(), ios = isIOS(), macos = isMacOS();
     safariRef.current = safari; iosRef.current = ios; macosRef.current = macos;
-    const r = new THREE.WebGLRenderer({ canvas: canvasRef.current, antialias:!ios, alpha:false, powerPreference:"high-performance", precision: ios ? "mediump" : "highp", preserveDrawingBuffer: ios || (safari && macos) });
-    r.setPixelRatio(Math.min(window.devicePixelRatio, ios ? 1.5 : CONFIG.RENDERER.MAX_PIXEL_RATIO));
-    r.setSize(window.innerWidth, window.innerHeight);
-    r.outputColorSpace    = THREE.SRGBColorSpace;
-    r.toneMapping         = THREE.ACESFilmicToneMapping;
-    r.toneMappingExposure = CONFIG.RENDERER.TONE_MAPPING_EXPOSURE;
-    r.shadowMap.enabled   = true;
-    r.shadowMap.type      = THREE.PCFSoftShadowMap;
-    rendererRef.current = r;
+    const testCtx = canvasRef.current.getContext("webgl2") || canvasRef.current.getContext("webgl");
+    if (!testCtx) { console.warn("[sBike] Canvas GL context unavailable — waiting for remount"); return; }
+    try {
+      const r = new THREE.WebGLRenderer({ canvas: canvasRef.current, antialias:!ios, alpha:false, powerPreference:"high-performance", precision: ios ? "mediump" : "highp", preserveDrawingBuffer: ios || (safari && macos) });
+      r.setPixelRatio(Math.min(window.devicePixelRatio, ios ? 1.5 : CONFIG.RENDERER.MAX_PIXEL_RATIO));
+      r.setSize(window.innerWidth, window.innerHeight);
+      r.outputColorSpace    = THREE.SRGBColorSpace;
+      r.toneMapping         = THREE.ACESFilmicToneMapping;
+      r.toneMappingExposure = CONFIG.RENDERER.TONE_MAPPING_EXPOSURE;
+      /* [FIX 10] Disable shadows on iOS — we use dynamic contact shadow instead */
+      if (ios) { r.shadowMap.enabled = false; }
+      else { r.shadowMap.enabled = true; r.shadowMap.type = THREE.PCFSoftShadowMap; }
+      rendererRef.current = r;
+    } catch (e) { console.error("[sBike] WebGLRenderer creation failed:", e); }
   }, []);
 
   const loadEnvironment = useCallback(() => {
     if (!sceneRef.current || !rendererRef.current) return;
+
+    /* [FIX 11 — REWRITTEN] iOS environment: skip the heavy HDR file but
+       still provide a proper bright environment map so PBR materials
+       (metallic/glossy) have something to reflect. */
+    if (iosRef.current) {
+      const keyLight = new THREE.DirectionalLight(0xffffff, 1.8);
+      keyLight.position.set(2, 8, 4);
+      const fillLight = new THREE.DirectionalLight(0xffffff, 0.9);
+      fillLight.position.set(-3, 4, -2);
+      const rimLight = new THREE.DirectionalLight(0xffffff, 0.6);
+      rimLight.position.set(0, -2, -4);
+      sceneRef.current.add(keyLight, fillLight, rimLight);
+      sceneRef.current.add(new THREE.AmbientLight(0xffffff, 0.5));
+
+      try {
+        const pmrem = new THREE.PMREMGenerator(rendererRef.current);
+        const envScene = new THREE.Scene();
+        envScene.background = new THREE.Color(0xd8d8d8);
+
+        const topLight = new THREE.Mesh(
+          new THREE.PlaneGeometry(8, 8),
+          new THREE.MeshBasicMaterial({ color: 0xffffff, side: THREE.DoubleSide })
+        );
+        topLight.position.set(0, 5, 0);
+        topLight.rotation.x = Math.PI / 2;
+        envScene.add(topLight);
+
+        const sideLight = new THREE.Mesh(
+          new THREE.PlaneGeometry(4, 6),
+          new THREE.MeshBasicMaterial({ color: 0xeeeeee, side: THREE.DoubleSide })
+        );
+        sideLight.position.set(5, 2, 0);
+        sideLight.rotation.y = -Math.PI / 2;
+        envScene.add(sideLight);
+
+        const backLight = new THREE.Mesh(
+          new THREE.PlaneGeometry(6, 4),
+          new THREE.MeshBasicMaterial({ color: 0xdddddd, side: THREE.DoubleSide })
+        );
+        backLight.position.set(-3, 3, -5);
+        backLight.lookAt(0, 2, 0);
+        envScene.add(backLight);
+
+        const floorLight = new THREE.Mesh(
+          new THREE.PlaneGeometry(10, 10),
+          new THREE.MeshBasicMaterial({ color: 0xbbbbbb, side: THREE.DoubleSide })
+        );
+        floorLight.position.set(0, -3, 0);
+        floorLight.rotation.x = -Math.PI / 2;
+        envScene.add(floorLight);
+
+        const envMap = pmrem.fromScene(envScene, 0, 0.1, 100).texture;
+        sceneRef.current.environment = envMap;
+        pmrem.dispose();
+      } catch (e) {
+        console.warn("[sBike] Failed to create iOS env map:", e);
+      }
+      return;
+    }
+
     try {
       const gl = rendererRef.current.getContext();
       const hasFloat = gl.getExtension("OES_texture_float") || gl.getExtension("OES_texture_half_float") || gl.getExtension("EXT_color_buffer_float") || gl.getExtension("EXT_color_buffer_half_float");
       if (!hasFloat && safariRef.current) { sceneRef.current.add(new THREE.AmbientLight(0xffffff, 0.6)); return; }
       const pmrem = new THREE.PMREMGenerator(rendererRef.current);
       pmrem.compileEquirectangularShader();
+
+      /* [FIX 12] Timeout for HDR loading */
+      let hdrLoaded = false;
+      const hdrTimeout = setTimeout(() => {
+        if (!hdrLoaded) { pmrem.dispose(); if (sceneRef.current) sceneRef.current.add(new THREE.AmbientLight(0xffffff, 0.6)); }
+      }, 15000);
+
       new RGBELoader().load(CONFIG.HDR.PATH,
-        hdr => { try { sceneRef.current!.environment = pmrem.fromEquirectangular(hdr).texture; } catch(e){} finally { hdr.dispose(); pmrem.dispose(); } },
+        hdr => {
+          hdrLoaded = true; clearTimeout(hdrTimeout);
+          try { if (sceneRef.current && mountedRef.current) sceneRef.current.environment = pmrem.fromEquirectangular(hdr).texture; } catch(e){} finally { hdr.dispose(); pmrem.dispose(); }
+        },
         undefined,
-        () => { pmrem.dispose(); sceneRef.current?.add(new THREE.AmbientLight(0xffffff, 0.6)); }
+        () => { hdrLoaded = true; clearTimeout(hdrTimeout); pmrem.dispose(); sceneRef.current?.add(new THREE.AmbientLight(0xffffff, 0.6)); }
       );
     } catch(e) {}
   }, []);
@@ -503,16 +713,35 @@ export default function Scrollfast() {
   const applyVideoToScreen = useCallback((idx: number) => {
     const vd = videosRef.current[idx - 1], mesh = screenMeshRef.current;
     if (!vd || !mesh) return;
-    videosRef.current.forEach((v, i) => { if (i !== idx - 1) { v.video.pause(); v.video.currentTime = 0; } });
+
+    /* [FIX 13] Dispose old screen material */
+    if (mesh.material) {
+      const oldMat = mesh.material as THREE.MeshStandardMaterial;
+      if (oldMat.map && !videosRef.current.some(v => v && v.texture === oldMat.map)) { oldMat.map.dispose(); }
+      oldMat.dispose();
+    }
+
+    videosRef.current.forEach((v, i) => { if (v && i !== idx - 1) { v.video.pause(); v.video.currentTime = 0; } });
     mesh.material = new THREE.MeshStandardMaterial({ map:vd.texture, emissive:new THREE.Color(0xffffff), emissiveMap:vd.texture, emissiveIntensity:1.0, roughness:0.5, metalness:0.0, transparent:false, depthWrite:true });
     if (needsSafariVideoUnlock() && !safariVideoUnlockedRef.current) { pendingVideoIdxRef.current = idx; vd.video.load(); }
     else playVideoSafely(vd.video);
   }, [playVideoSafely]);
 
   const setupVideos = useCallback((model: THREE.Group) => {
-    for (const vc of CONFIG.VIDEOS) {
-      const vd = createVideoTexture(vc.path);
-      if (vd) { videosRef.current.push(vd); setTimeout(() => vd.video.load(), 0); }
+    const isIOSDevice = isIOS();
+    /* [FIX 14] On iOS, only create first video texture. Others lazy-loaded. */
+    for (let i = 0; i < CONFIG.VIDEOS.length; i++) {
+      const vc = CONFIG.VIDEOS[i];
+      if (isIOSDevice && i > 0) {
+        videosRef.current.push(null as any);
+      } else {
+        const vd = createVideoTexture(vc.path);
+        if (vd) {
+          videosRef.current.push(vd);
+          loadedVideoIndicesRef.current.add(i);
+          if (!isIOSDevice) setTimeout(() => vd.video.load(), 0);
+        }
+      }
     }
     const anchorNames = CONFIG.ANNOTATION_ANCHOR_MESHES.map(n => n.toLowerCase());
     model.traverse(child => {
@@ -521,8 +750,26 @@ export default function Scrollfast() {
       if (anchorNames.some(an => nameLc === an)) return;
       if (nameLc === CONFIG.SCREEN.MESH_NAME.toLowerCase() || (mesh.material as any)?.name?.toLowerCase().includes(CONFIG.SCREEN.MATERIAL_NAME)) screenMeshRef.current = mesh;
     });
-    if (screenMeshRef.current && videosRef.current.length > 0) applyVideoToScreen(1);
+    if (screenMeshRef.current && videosRef.current.length > 0 && videosRef.current[0]) applyVideoToScreen(1);
   }, [applyVideoToScreen]);
+
+  /* [FIX 15] Lazy video creator for iOS */
+  const ensureVideoLoaded = useCallback((idx: number): boolean => {
+    const arrayIdx = idx - 1;
+    if (loadedVideoIndicesRef.current.has(arrayIdx) && videosRef.current[arrayIdx]) return true;
+    const vc = CONFIG.VIDEOS[arrayIdx];
+    if (!vc) return false;
+    if (videosRef.current[arrayIdx]) {
+      const old = videosRef.current[arrayIdx];
+      if (old && old.video) { old.video.pause(); old.video.removeAttribute("src"); old.video.load(); if (old.video.parentNode) old.video.parentNode.removeChild(old.video); }
+      if (old && old.texture) old.texture.dispose();
+    }
+    const vd = createVideoTexture(vc.path);
+    if (!vd) return false;
+    videosRef.current[arrayIdx] = vd;
+    loadedVideoIndicesRef.current.add(arrayIdx);
+    return true;
+  }, []);
 
   const setupWheelMeshes = useCallback((model: THREE.Group) => {
     const meshes: THREE.Mesh[] = [];
@@ -567,6 +814,32 @@ export default function Scrollfast() {
     if (cameraRef.current) { cameraRef.current.position.z = origCamZRef.current * (dt==="sm"?5:dt==="md"?4:2); cameraRef.current.aspect = window.innerWidth/window.innerHeight; cameraRef.current.updateProjectionMatrix(); }
   }, []);
 
+  /* [FIX 16] Downscale large textures on iOS */
+  const downscaleTexturesForIOS = useCallback((model: THREE.Group) => {
+    if (!isIOS()) return;
+    const MAX_TEX_SIZE = 1024;
+    model.traverse(child => {
+      if (!(child as THREE.Mesh).isMesh) return;
+      const mesh = child as THREE.Mesh;
+      const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+      for (const mat of materials) {
+        const m = mat as any;
+        for (const key of ['map', 'normalMap', 'roughnessMap', 'metalnessMap', 'aoMap', 'emissiveMap']) {
+          const tex = m[key] as THREE.Texture | undefined;
+          const img = tex?.image as HTMLImageElement | undefined;
+          if (tex && img && img.width && img.height && (img.width > MAX_TEX_SIZE || img.height > MAX_TEX_SIZE)) {
+            const canvas = document.createElement('canvas');
+            const aspect = img.width / img.height;
+            if (img.width > img.height) { canvas.width = MAX_TEX_SIZE; canvas.height = Math.round(MAX_TEX_SIZE / aspect); }
+            else { canvas.height = MAX_TEX_SIZE; canvas.width = Math.round(MAX_TEX_SIZE * aspect); }
+            const ctx = canvas.getContext('2d');
+            if (ctx) { ctx.drawImage(img, 0, 0, canvas.width, canvas.height); tex.image = canvas; tex.needsUpdate = true; }
+          }
+        }
+      }
+    });
+  }, []);
+
   const loadModel = useCallback(() => {
     if (!sceneRef.current || !rendererRef.current) return;
     const dracoLoader = new DRACOLoader();
@@ -574,6 +847,10 @@ export default function Scrollfast() {
     const loader = new GLTFLoader(); loader.setDRACOLoader(dracoLoader);
     loader.load(CONFIG.MODEL.PATH,
       gltf => {
+        /* [FIX 17] Guard unmounted + re-check renderer */
+        if (!mountedRef.current) { dracoLoader.dispose(); return; }
+        if (!rendererRef.current) { dracoLoader.dispose(); return; }
+
         const model = gltf.scene; modelRef.current = model;
         if (gltf.cameras?.length) {
           const gc = gltf.cameras[0];
@@ -589,15 +866,31 @@ export default function Scrollfast() {
         model.traverse(child => { if (child.name.toLowerCase() === "pop01") { pop01MeshRef.current = child; child.visible = isMobileDevice(dtRef.current); } });
         model.traverse(child => {
           if (!(child as THREE.Mesh).isMesh) return;
-          const mesh = child as THREE.Mesh; mesh.castShadow = true; mesh.receiveShadow = true;
+          const mesh = child as THREE.Mesh;
+          /* [FIX 18] Skip shadow casting on iOS */
+          mesh.castShadow = !iosRef.current;
+          mesh.receiveShadow = !iosRef.current;
           const isScreen = child.name.toLowerCase().includes(CONFIG.SCREEN.MESH_NAME.toLowerCase());
           for (const m of (Array.isArray(mesh.material) ? mesh.material : [mesh.material])) optimizeMaterial(m, rendererRef.current!, isScreen);
         });
+
+        /* [FIX 16] Downscale textures on iOS */
+        downscaleTexturesForIOS(model);
+
         const dt = getDeviceType(), s = CONFIG.MODEL.SCALE[dt];
         model.scale.set(s,s,s); centerModel(model, dt);
         const box = new THREE.Box3().setFromObject(model);
         if (groundRef.current) groundRef.current.position.y = box.min.y;
         sceneRef.current!.add(model);
+
+        /* ── Natural soft contact shadow for iOS/mobile ── */
+        if (iosRef.current && sceneRef.current) {
+          const shadow = createNaturalContactShadow(model, sceneRef.current);
+          if (shadow) {
+            contactShadowRef.current = shadow;
+          }
+        }
+
         setupVideos(model); setupWheelMeshes(model); setupConnectorMeshes(model); setupAnnotationAnchors(model);
         if (gltf.animations.length) {
           const mixer  = new THREE.AnimationMixer(model);
@@ -613,7 +906,7 @@ export default function Scrollfast() {
       xhr => { if (xhr?.lengthComputable) setModelProgress(Math.round((xhr.loaded / xhr.total) * 100)); },
       err => { console.error(err); dracoLoader.dispose(); setError("Failed to load 3D model."); setLoading(false); setModelProgress(100); }
     );
-  }, [setupVideos, setupWheelMeshes, setupConnectorMeshes, setupAnnotationAnchors]);
+  }, [setupVideos, setupWheelMeshes, setupConnectorMeshes, setupAnnotationAnchors, downscaleTexturesForIOS]);
 
   /* ==================== SCROLLTRIGGER PIN ==================== */
   useEffect(() => {
@@ -621,7 +914,12 @@ export default function Scrollfast() {
     const section = pinWrapperRef.current;
     if (!section) return;
 
-    // Use the new SCROLL_SEGMENTS so the pin lasts longer
+    /* [FIX 19] Prevent iOS Safari overscroll bounce */
+    const htmlEl = document.documentElement;
+    const bodyEl = document.body;
+    htmlEl.style.overscrollBehavior = "none";
+    bodyEl.style.overscrollBehavior = "none";
+
     const pinDistance = window.innerHeight * (VH_PER_SECTION / 100) * SCROLL_SEGMENTS;
 
     const st = ScrollTrigger.create({
@@ -648,6 +946,8 @@ export default function Scrollfast() {
     return () => {
       st.kill();
       window.removeEventListener("pointerdown", markInteracted);
+      htmlEl.style.overscrollBehavior = "";
+      bodyEl.style.overscrollBehavior = "";
     };
   }, [loading, unlockSafariVideos, playVideoSafely]);
 
@@ -656,8 +956,18 @@ export default function Scrollfast() {
     let rafId: number, lastT = performance.now();
     const prevAnnIds = { current: [] as number[] };
 
+    /* [FIX 20] Throttle render on iOS to ~30fps */
+    const isIOSDevice = isIOS();
+    let frameSkip = 0;
+
     const animate = (now: number) => {
       rafId = requestAnimationFrame(animate);
+
+      if (isIOSDevice) {
+        frameSkip++;
+        if (frameSkip % 2 !== 0) return;
+      }
+
       if (document.visibilityState === "hidden") { lastT = now; return; }
       const dt = Math.min((now - lastT) / 1000, 0.05); lastT = now;
       if (!rendererRef.current || !sceneRef.current || !cameraRef.current) return;
@@ -677,7 +987,7 @@ export default function Scrollfast() {
       if (frame >= CONFIG.TOTAL_FRAMES - 1)     setShowButtons(true);
       else if (frame < CONFIG.TOTAL_FRAMES - 10) setShowButtons(false);
 
-      // ── Annotation visibility — frame-based so text tracks the animation ──
+      // ── Annotation visibility ──
       const FADE = 4;
       const nextIds: number[] = [];
       for (const a of CONFIG.TEXT_ANNOTATIONS) {
@@ -699,6 +1009,11 @@ export default function Scrollfast() {
         const clip = actionRef.current.getClip();
         actionRef.current.time = (frame / CONFIG.TOTAL_FRAMES) * clip.duration;
         mixerRef.current.update(0);
+      }
+
+      // ── Update dynamic contact shadow (iOS/mobile only) ──
+      if (contactShadowRef.current) {
+        contactShadowRef.current.update();
       }
 
       // ── Video texture update ──
@@ -762,11 +1077,35 @@ export default function Scrollfast() {
     return () => document.removeEventListener("visibilitychange", onVis);
   }, [playVideoSafely]);
 
+  /* ==================== [FIX 21] MEMORY PRESSURE HANDLING ==================== */
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const handleMemoryWarning = () => {
+      console.warn("[sBike] Memory pressure — freeing inactive video resources");
+      videosRef.current.forEach((vd, i) => {
+        if (!vd || i === activeVideoRef.current - 1) return;
+        vd.video.pause(); vd.video.removeAttribute("src"); vd.video.load();
+      });
+      if (rendererRef.current) rendererRef.current.info.reset();
+    };
+    window.addEventListener("pagehide", handleMemoryWarning);
+    return () => { window.removeEventListener("pagehide", handleMemoryWarning); };
+  }, []);
+
   /* ==================== INIT ==================== */
   useEffect(() => {
-    if (initializedRef.current) return;
+    /* [FIX 22] Allow re-initialization after React Strict Mode unmount */
+    mountedRef.current = true;
     initializedRef.current = true;
-    initScene(); initRenderer(); loadEnvironment(); loadModel();
+
+    initScene();
+    initRenderer();
+
+    if (!rendererRef.current) {
+      return () => { mountedRef.current = false; initializedRef.current = false; };
+    }
+
+    loadEnvironment(); loadModel();
 
     const onResize = () => {
       if (!rendererRef.current || !cameraRef.current) return;
@@ -786,29 +1125,78 @@ export default function Scrollfast() {
 
     const canvas = canvasRef.current;
     const onCL = (e: Event) => { e.preventDefault(); };
-    const onCR = () => { rendererRef.current?.dispose(); rendererRef.current = null; initializedRef.current = false; initRenderer(); loadEnvironment(); };
+    const onCR = () => {
+      rendererRef.current?.dispose(); rendererRef.current = null;
+      initRenderer(); loadEnvironment();
+      if (modelRef.current && sceneRef.current && rendererRef.current) {
+        modelRef.current.traverse(child => {
+          if (!(child as THREE.Mesh).isMesh) return;
+          for (const m of (Array.isArray((child as THREE.Mesh).material) ? (child as THREE.Mesh).material as THREE.Material[] : [(child as THREE.Mesh).material as THREE.Material])) {
+            (m as any).needsUpdate = true;
+          }
+        });
+      }
+    };
     canvas?.addEventListener("webglcontextlost",     onCL, false);
     canvas?.addEventListener("webglcontextrestored", onCR, false);
 
     return () => {
+      mountedRef.current = false;
+      initializedRef.current = false;
+
       window.removeEventListener("resize", onResize);
       canvas?.removeEventListener("webglcontextlost",     onCL);
       canvas?.removeEventListener("webglcontextrestored", onCR);
-      for (const v of videosRef.current) { v.video.pause(); v.video.removeAttribute("src"); v.video.load(); v.texture.dispose(); if (v.video.parentNode) v.video.parentNode.removeChild(v.video); }
+
+      gsap.killTweensOf("*");
+
+      for (const v of videosRef.current) {
+        if (!v) continue;
+        v.video.pause(); v.video.removeAttribute("src"); v.video.load(); v.texture.dispose();
+        if (v.video.parentNode) v.video.parentNode.removeChild(v.video);
+      }
       videosRef.current = [];
-      sceneRef.current?.traverse(obj => { if (!(obj as THREE.Mesh).isMesh) return; const m = obj as THREE.Mesh; m.geometry?.dispose(); for (const mat of (Array.isArray(m.material) ? m.material : [m.material])) mat.dispose(); });
+      loadedVideoIndicesRef.current.clear();
+
+      /* Dispose dynamic contact shadow */
+      if (contactShadowRef.current) {
+        contactShadowRef.current.dispose();
+        contactShadowRef.current = null;
+      }
+
+      sceneRef.current?.traverse(obj => {
+        if (!(obj as THREE.Mesh).isMesh) return;
+        const m = obj as THREE.Mesh; m.geometry?.dispose();
+        for (const mat of (Array.isArray(m.material) ? m.material : [m.material])) {
+          const stdMat = mat as any;
+          for (const key of ['map', 'normalMap', 'roughnessMap', 'metalnessMap', 'aoMap', 'emissiveMap', 'envMap']) {
+            if (stdMat[key]) { stdMat[key].dispose(); stdMat[key] = null; }
+          }
+          mat.dispose();
+        }
+      });
+
+      if (sceneRef.current?.environment) { sceneRef.current.environment.dispose(); sceneRef.current.environment = null; }
+
       sceneRef.current?.clear();
-      rendererRef.current?.forceContextLoss(); rendererRef.current?.dispose(); rendererRef.current = null;
+      sceneRef.current = null;
+      rendererRef.current?.dispose(); rendererRef.current = null;
       modelRef.current = null; mixerRef.current = null; actionRef.current = null;
       pop01MeshRef.current = null; connectorMeshRefs.current = [null,null,null,null]; annotationAnchorRefs.current = [null,null];
+      contactShadowRef.current = null;
       wheelMeshesRef.current = []; wheelOriginalColorsRef.current.clear();
-      initializedRef.current = false;
+      screenMeshRef.current = null;
       ScrollTrigger.getAll().forEach(t => t.kill());
     };
   }, [initScene, initRenderer, loadEnvironment, loadModel, updateModelLayout]);
 
-  /* ── Dot click: smooth scroll to the target section position ── */
-  const switchVideo = useCallback((idx: number) => { activeVideoRef.current = idx; setActiveVideo(idx); applyVideoToScreen(idx); }, [applyVideoToScreen]);
+  /* ── Video switch with lazy loading ── */
+  const switchVideo = useCallback((idx: number) => {
+    if (isIOS() && !loadedVideoIndicesRef.current.has(idx - 1)) {
+      ensureVideoLoaded(idx);
+    }
+    activeVideoRef.current = idx; setActiveVideo(idx); applyVideoToScreen(idx);
+  }, [applyVideoToScreen, ensureVideoLoaded]);
 
   const handleDotClick = useCallback((idx: number) => {
     hasUserInteractedRef.current = true;
@@ -819,10 +1207,9 @@ export default function Scrollfast() {
     }
     const st = ScrollTrigger.getAll()[0];
     if (!st) return;
-    
-    // Updated Math to use SCROLL_SEGMENTS for correct jumping
+
     const targetY = (st.start as number) + (idx / SCROLL_SEGMENTS) * ((st.end as number) - (st.start as number));
-    
+
     gsap.to(window, { scrollTo: { y: targetY, autoKill: false }, duration: 1.0, ease: "power2.inOut" });
   }, [playVideoSafely, unlockSafariVideos]);
 
@@ -846,7 +1233,6 @@ export default function Scrollfast() {
     <>
       <Preloader progress={modelProgress} visible={loading} />
 
-      {/* ScrollTrigger pins this wrapper. Height = one viewport minus fixed nav. */}
       <div
         ref={pinWrapperRef}
         style={{ height: `calc(100vh - ${NAV_HEIGHT}px)`, width: "100%", position: "relative", overflow: "hidden" }}
@@ -864,7 +1250,6 @@ export default function Scrollfast() {
 
           {annotationElements}
 
-          {/* Section nav dots */}
           <div className="absolute right-4 top-1/2 -translate-y-1/2 z-50 flex flex-col gap-3">
             {STOP_FRAMES.map((_, idx) => (
               <button

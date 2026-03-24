@@ -103,7 +103,7 @@ const TOTAL_SECTIONS = STOP_FRAMES.length;
 /* ==================== LAYOUT CONSTANTS ==================== */
 const NAV_HEIGHT = 62;
 // Increased distance to give ScrollTrigger more room to process the unpin properly
-const PIN_SCROLL_DISTANCE = 1000; 
+const PIN_SCROLL_DISTANCE = 1000;
 
 /* ==================== TYPES ==================== */
 type DeviceType = "sm" | "md" | "lg" | "xl";
@@ -775,7 +775,7 @@ export default function Scroll3DCanva() {
       markInteracted();
 
       if (releaseStateRef.current === "releasing" || releaseStateRef.current === "free") {
-        return; 
+        return;
       }
 
       if (!isSectionActive()) return;
@@ -795,18 +795,18 @@ export default function Scroll3DCanva() {
         return;
       }
 
-     if (isAtTerminal(dir)) {
-  beginRelease();
-  const st = scrollTriggerRef.current;
-  if (st) {
-    // Instantly jump the scrollbar to the exact edge of the pin boundary
-    // so the user doesn't have to scroll through the empty pin spacing.
-    // +2 or -2 ensures we land just outside the trigger to fully unpin it.
-    const targetY = dir === 1 ? st.end + 2 : st.start - 2;
-    window.scrollTo({ top: targetY, behavior: "instant" });
-  }
-  return; 
-}
+      if (isAtTerminal(dir)) {
+        beginRelease();
+        const st = scrollTriggerRef.current;
+        if (st) {
+          // Instantly jump the scrollbar to the exact edge of the pin boundary
+          // so the user doesn't have to scroll through the empty pin spacing.
+          // +2 or -2 ensures we land just outside the trigger to fully unpin it.
+          const targetY = dir === 1 ? st.end + 2 : st.start - 2;
+          window.scrollTo({ top: targetY, behavior: "instant" });
+        }
+        return;
+      }
 
       e.preventDefault();
       if (isTweeningRef.current || cooldownRef.current) return;
@@ -834,17 +834,17 @@ export default function Scroll3DCanva() {
       if (!isSectionActive()) return;
       const dy = touchStartY - e.touches[0].clientY;
       const dir = dy > 0 ? 1 : -1;
-      
-      if (shouldReEngage(dir)) { 
-        e.preventDefault(); 
-        return; 
+
+      if (shouldReEngage(dir)) {
+        e.preventDefault();
+        return;
       }
 
       if (isAtTerminal(dir)) {
         beginRelease();
         return;
       }
-      
+
       e.preventDefault();
     };
 
@@ -1249,7 +1249,7 @@ export default function Scroll3DCanva() {
         <div
           ref={containerRef}
           className="relative w-full h-full overflow-hidden"
-     
+
         >
           <canvas ref={canvasRef} className="w-full h-full" style={{ display: "block" }} />
 

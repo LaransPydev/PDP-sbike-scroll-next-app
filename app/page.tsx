@@ -36,8 +36,9 @@ export default function Home() {
       {/* <Scrollfinal /> */}
       {/* <ScrollVersion/> */}
       <Scrollfast/>
+      {/* <Scroll3DCanvas/> */}
 
-      <ImageSection/>
+      {/* <ImageSection/> */}
 
       {/* ⑥ Footer */}
       <div style={{ position: "relative", backgroundColor: "#fff" }}>

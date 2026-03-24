@@ -121,7 +121,7 @@ export default function FooterSection() {
             {/* ── Trustpilot bar ── */}
             <div className="border-b border-white/[0.06] py-4">
                 <div className="max-w-7xl mx-auto px-6 flex items-center justify-center gap-3 flex-wrap">
-                     <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2">
                         <img src="/logo-footer_(5).svg" alt="Sportstech Logo" />
                     </div>
                     <span className="text-[15px] font-semibold text-gray-100 tracking-tight">
@@ -225,7 +225,7 @@ export default function FooterSection() {
             {/* ── Bottom bar ── */}
             <div className="border-t border-white/[0.06] py-4">
                 <div className="max-w-7xl mx-auto px-6 flex items-center justify-between flex-wrap gap-4">
-                   
+
                     <span className="text-xs text-gray-500">
                         © {new Date().getFullYear()} Sportstech Brands Holding GmbH. Alle Rechte vorbehalten.
                     </span>
