@@ -23,9 +23,9 @@ const framePath = (i: number) => `/frames/${i}.webp`;
 
 
 const SECTIONS = [
-  { id: 1, name: "Workout",   frameStart: 210, frameEnd: 433 },
+  { id: 1, name: "Workout", frameStart: 210, frameEnd: 433 },
   { id: 2, name: "Landscape", frameStart: 500, frameEnd: 666 },
-  { id: 3, name: "Gaming",    frameStart: 795, frameEnd: 900 },
+  { id: 3, name: "Gaming", frameStart: 795, frameEnd: 900 },
 ];
 
 const HOTSPOTS = [
@@ -51,16 +51,16 @@ const HOTSPOTS = [
   },
 ];
 
-const SCROLL_DISTANCE   = 6000;
+const SCROLL_DISTANCE = 6000;
 
 const PAUSE_POINTS: { at: number; holdPx: number }[] = [
-  { at: 50,  holdPx: 300 },
+  { at: 50, holdPx: 300 },
   { at: 130, holdPx: 200 },
 ];
 
-const INTRO_END_FRAME    = 200;
-const TOTAL_DOT_STOPS    = PAUSE_POINTS.length + 1;
-const READY_THRESHOLD    = 30;
+const INTRO_END_FRAME = 200;
+const TOTAL_DOT_STOPS = PAUSE_POINTS.length + 1;
+const READY_THRESHOLD = FRAME_COUNT;
 const HOTSPOT_SHOW_DELAY = 100;
 
 /* ================================================================
@@ -128,41 +128,21 @@ const Preloader: React.FC<{ progress: number; visible: boolean; label: string }>
 };
 
 /* ================================================================
-   BUFFERING OVERLAY
-   ================================================================ */
-const BufferingOverlay: React.FC<{ visible: boolean }> = ({ visible }) => (
-  <div style={{
-    position: "fixed", inset: 0, zIndex: 9998,
-    display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
-    background: "rgba(0,0,0,0.6)", backdropFilter: "blur(6px)",
-    opacity: visible ? 1 : 0, pointerEvents: "none",
-    transition: "opacity 0.3s ease"
-  }}>
-    <svg width="48" height="48" viewBox="0 0 50 50" style={{ animation: "spin 1s linear infinite" }}>
-      <style>{`@keyframes spin { 100% { transform: rotate(360deg); } }`}</style>
-      <circle cx="25" cy="25" r="20" fill="none" stroke="rgba(255,255,255,0.2)" strokeWidth="4" />
-      <circle cx="25" cy="25" r="20" fill="none" stroke="#dc2626" strokeWidth="4" strokeLinecap="round" strokeDasharray="90 150" />
-    </svg>
-    <div style={{ marginTop: 16, fontFamily: "'DM Mono','Courier New',monospace", fontSize: 12, color: "#fff", letterSpacing: "0.2em" }}>BUFFERING...</div>
-  </div>
-);
-
-/* ================================================================
    HOTSPOT CARD
    ================================================================ */
 const HotspotCard: React.FC<{
   spot: typeof HOTSPOTS[number]; visible: boolean; bp: Breakpoint;
 }> = React.memo(({ spot, visible, bp }) => {
-  const cardW   = bp === "sm" ? 220 : 256;
+  const cardW = bp === "sm" ? 220 : 256;
   const lineLen = bp === "sm" ? 50 : 80;
-  const isLeft  = spot.lineFrom === "left";
+  const isLeft = spot.lineFrom === "left";
   const svgStyle: React.CSSProperties = {
     position: "absolute", top: "50%", transform: "translateY(-50%)",
     ...(isLeft ? { right: "100%" } : { left: "100%" }),
     width: lineLen, height: 32, overflow: "visible", pointerEvents: "none",
   };
-  const lx1   = isLeft ? lineLen : 0;
-  const lx2   = isLeft ? 0 : lineLen;
+  const lx1 = isLeft ? lineLen : 0;
+  const lx2 = isLeft ? 0 : lineLen;
   const dotCx = isLeft ? 0 : lineLen;
   return (
     <div style={{
@@ -227,41 +207,38 @@ const ScrollHint: React.FC<{ visible: boolean }> = ({ visible }) => (
    MAIN COMPONENT
    ================================================================ */
 export default function ScrollFrames({ src }: { src?: string }) {
-  const [readyToShow,    setReadyToShow]    = useState(false);
-  const [showPreloader,  setShowPreloader]  = useState(true);
-  const [loadProgress,   setLoadProgress]   = useState(0);
+  const [readyToShow, setReadyToShow] = useState(false);
+  const [showPreloader, setShowPreloader] = useState(true);
+  const [loadProgress, setLoadProgress] = useState(0);
   const [preloaderLabel, setPreloaderLabel] = useState("Loading…");
-  const [activeSection,  setActiveSection]  = useState<number | null>(null);
-  const [introComplete,  setIntroComplete]  = useState(false);
+  const [activeSection, setActiveSection] = useState<number | null>(null);
+  const [introComplete, setIntroComplete] = useState(false);
   const [hotspotVisible, setHotspotVisible] = useState<Record<number, boolean>>({});
-  const [currentDot,     setCurrentDot]     = useState(0);
-  const [showButtons,    setShowButtons]    = useState(false);
-  const [isBuffering,    setIsBuffering]    = useState(false);
+  const [currentDot, setCurrentDot] = useState(0);
+  const [showButtons, setShowButtons] = useState(false);
 
   const containerRef = useRef<HTMLDivElement>(null);
-  const canvasRef    = useRef<HTMLCanvasElement>(null);
-  const progressRef  = useRef<HTMLDivElement>(null);
-  const tlRef        = useRef<gsap.core.Timeline | null>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const progressRef = useRef<HTMLDivElement>(null);
+  const tlRef = useRef<gsap.core.Timeline | null>(null);
 
   const imagesRef = useRef<(HTMLImageElement | null)[]>(new Array(FRAME_COUNT).fill(null));
   const loadedRef = useRef<boolean[]>(new Array(FRAME_COUNT).fill(false));
 
   const targetFrameRef = useRef(1);
-  const drawnFrameRef  = useRef(-1);
-  const rafRef         = useRef(0);
+  const drawnFrameRef = useRef(-1);
+  const rafRef = useRef(0);
 
-  const stProxyRef     = useRef({ frame: 1 });
-  const proxyRef       = useRef({ frame: 1 });
+  const stProxyRef = useRef({ frame: 1 });
+  const proxyRef = useRef({ frame: 1 });
   const activeTweenRef = useRef<gsap.core.Tween | null>(null);
 
-  const activeSectionRef  = useRef<number | null>(null);
-  const introCompleteRef  = useRef(false);
-  const readyRef          = useRef(false);
+  const activeSectionRef = useRef<number | null>(null);
+  const introCompleteRef = useRef(false);
+  const readyRef = useRef(false);
 
-  const hotspotTimerRef   = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const hotspotTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingHotspotRef = useRef<Record<number, boolean>>({});
-  const isBufferingRef    = useRef(false);
-  const priorityLoadRef   = useRef<number | null>(null);
 
   const bp = useBreakpoint();
 
@@ -273,29 +250,17 @@ export default function ScrollFrames({ src }: { src?: string }) {
       const target = Math.max(1, Math.min(FRAME_COUNT, Math.round(targetFrameRef.current)));
       if (target !== drawnFrameRef.current) {
         const canvas = canvasRef.current;
-        const img    = imagesRef.current[target - 1];
+        const img = imagesRef.current[target - 1];
         if (canvas && img && loadedRef.current[target - 1]) {
           const ctx = canvas.getContext("2d");
           if (ctx) {
             if (canvas.width !== img.naturalWidth || canvas.height !== img.naturalHeight) {
-              canvas.width  = img.naturalWidth;
+              canvas.width = img.naturalWidth;
               canvas.height = img.naturalHeight;
             }
             ctx.drawImage(img, 0, 0);
             drawnFrameRef.current = target;
           }
-          if (isBufferingRef.current) {
-            isBufferingRef.current = false;
-            setIsBuffering(false);
-            if (activeTweenRef.current?.paused()) activeTweenRef.current.resume();
-          }
-        } else if (readyRef.current && introCompleteRef.current) {
-          if (!isBufferingRef.current) {
-            isBufferingRef.current = true;
-            setIsBuffering(true);
-            if (activeTweenRef.current) activeTweenRef.current.pause();
-          }
-          priorityLoadRef.current = target - 1;
         }
       }
       rafRef.current = requestAnimationFrame(loop);
@@ -327,13 +292,13 @@ export default function ScrollFrames({ src }: { src?: string }) {
       }
     });
 
-    const currentVis    = pendingHotspotRef.current;
-    let shouldHideNow   = false;
+    const currentVis = pendingHotspotRef.current;
+    let shouldHideNow = false;
     let shouldShowDelay = false;
     for (const id in newVis) {
       const numId = Number(id);
-      if (!newVis[numId] &&  currentVis[numId]) shouldHideNow   = true;
-      if ( newVis[numId] && !currentVis[numId]) shouldShowDelay = true;
+      if (!newVis[numId] && currentVis[numId]) shouldHideNow = true;
+      if (newVis[numId] && !currentVis[numId]) shouldShowDelay = true;
     }
 
     if (shouldHideNow) {
@@ -357,7 +322,7 @@ export default function ScrollFrames({ src }: { src?: string }) {
      SMART LOADING STRATEGY
      ================================================================ */
   useEffect(() => {
-    const imgs   = imagesRef.current;
+    const imgs = imagesRef.current;
     const loaded = loadedRef.current;
     let phase1Done = 0;
 
@@ -376,58 +341,13 @@ export default function ScrollFrames({ src }: { src?: string }) {
     };
 
     for (let i = 0; i < READY_THRESHOLD; i++) {
-      const img    = new Image();
+      const img = new Image();
       img.decoding = "async";
-      img.onload   = () => onLoad(i);
-      img.onerror  = () => onLoad(i);
-      img.src      = framePath(i + 1);
-      imgs[i]      = img;
+      img.onload = () => onLoad(i);
+      img.onerror = () => onLoad(i);
+      img.src = framePath(i + 1);
+      imgs[i] = img;
     }
-
-    const bgLoad = () => {
-      let currentIdx = READY_THRESHOLD;
-      const BATCH_SIZE = 20;
-
-      const loadNextBatch = () => {
-        let startIdx = currentIdx;
-        
-        if (priorityLoadRef.current !== null) {
-           startIdx = priorityLoadRef.current;
-           while(startIdx < FRAME_COUNT && loaded[startIdx]) startIdx++;
-           if (startIdx >= FRAME_COUNT) {
-              priorityLoadRef.current = null;
-              startIdx = currentIdx;
-           }
-        } else {
-           while(startIdx < FRAME_COUNT && loaded[startIdx]) startIdx++;
-           currentIdx = startIdx;
-        }
-
-        if (startIdx >= FRAME_COUNT) return;
-
-        const endIdx = Math.min(startIdx + BATCH_SIZE, FRAME_COUNT);
-        for (let i = startIdx; i < endIdx; i++) {
-          if (loaded[i]) continue;
-          const idx    = i;
-          const img    = new Image();
-          img.decoding = "async";
-          img.onload   = () => { loaded[idx] = true; };
-          img.onerror  = () => { loaded[idx] = true; };
-          img.src      = framePath(idx + 1);
-          imgs[idx]    = img;
-        }
-        
-        if (priorityLoadRef.current === null) {
-           currentIdx = endIdx;
-        }
-        setTimeout(loadNextBatch, 50);
-      };
-
-      loadNextBatch();
-    };
-
-    const bgTimer = setTimeout(bgLoad, 800);
-    return () => clearTimeout(bgTimer);
   }, []);
 
   /* ================================================================
@@ -459,7 +379,7 @@ export default function ScrollFrames({ src }: { src?: string }) {
     const handleScrubUpdate = () => {
       const tl = tlRef.current;
       if (!tl) return;
-      
+
       const currentTime = tl.time();
       const introTime = tl.labels["intro_end"] || 9.0;
 
@@ -486,7 +406,7 @@ export default function ScrollFrames({ src }: { src?: string }) {
             activeTweenRef.current = null;
           }
         }
-        
+
         setTargetFrame(nf);
       } else {
         // Sections part scrolling (frames animated by gsap.to, not scrubbed)
@@ -561,7 +481,7 @@ export default function ScrollFrames({ src }: { src?: string }) {
 
     const dotF = [...PAUSE_POINTS.map(p => p.at), INTRO_END_FRAME];
     const f = dotF[dotIndex];
-    
+
     let time = 0;
     if (f === INTRO_END_FRAME) {
       time = tlRef.current.labels['intro_end'];
@@ -589,11 +509,11 @@ export default function ScrollFrames({ src }: { src?: string }) {
   const handleSectionClick = useCallback((sectionIndex: number) => {
     const st = ScrollTrigger.getAll().find(t => t.vars.id === "scroll-frames-trigger");
     if (!st || !tlRef.current) return;
-    
+
     const label = `section_${sectionIndex}_start`;
     const time = tlRef.current.labels[label];
     const progress = time / tlRef.current.duration();
-    
+
     const s = st.start as number, e = st.end as number;
     const targetY = s + progress * (e - s) + 10;
 
@@ -615,7 +535,6 @@ export default function ScrollFrames({ src }: { src?: string }) {
   return (
     <>
       <Preloader progress={loadProgress} visible={showPreloader} label={preloaderLabel} />
-      <BufferingOverlay visible={isBuffering} />
 
       <div ref={containerRef} style={{ width: "100%", height: "100vh", background: "#000", overflow: "hidden", position: "relative" }}>
 
@@ -650,8 +569,8 @@ export default function ScrollFrames({ src }: { src?: string }) {
                 border: "none", cursor: "pointer", whiteSpace: "nowrap",
                 transition: "background 0.3s ease, color 0.3s ease, box-shadow 0.3s ease",
                 background: activeSection === idx ? "#dc2626" : "transparent",
-                color:      activeSection === idx ? "#fff"     : "#333",
-                boxShadow:  activeSection === idx ? "0 2px 10px rgba(220,38,38,0.35)" : "none",
+                color: activeSection === idx ? "#fff" : "#333",
+                boxShadow: activeSection === idx ? "0 2px 10px rgba(220,38,38,0.35)" : "none",
               }}>{section.name}</button>
             ))}
           </div>
@@ -695,7 +614,7 @@ export default function ScrollFrames({ src }: { src?: string }) {
           ))}
         </div>
 
-        
+
       </div>
     </>
   );
