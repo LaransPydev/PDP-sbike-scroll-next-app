@@ -15,7 +15,8 @@ import Scrollimage from "./components/Scrollimage";
 
 const NAV_HEIGHT = 112;
 
-const videourl = "/0000-0400 3 (2).mkv"
+// const videourl = "/0000-0400 3 (2).mkv"
+const videourl = "/scroll_animation_optimized.mp4";
 
 export default function Home() {
   return (
@@ -42,9 +43,10 @@ export default function Home() {
       {/* <ScrollVersion/> */}
       {/* <Scrollfast/> */}
       {/* <Scroll3DCanvas/> */}
-      <Scrollimage src="/frames/" />
+      {/* <Scrollimage src="/frames/" /> */}
       {/* <ScrollVideo src={videourl} /> */}
       {/* <ImageSection/> */}
+      <Scrollvideo src={videourl} />
 
       {/* ⑥ Footer */}
       <div style={{ position: "relative", backgroundColor: "#fff" }}>
