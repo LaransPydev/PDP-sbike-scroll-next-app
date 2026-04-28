@@ -9,7 +9,7 @@ import Scrollfast from "./components/Scrollfast";
 import Scrollfinal from "./components/Scrollfinal";
 import Topnav from "./components/Topnav";
 import ScrollVersion from "./components/scrollversion";
-import Scrollvideo from "./components/Scrollimage";
+import Scrollvideo from "./components/Scrollvideo";
 import ScrollVideo from "./components/Scrollimage";
 import Scrollimage from "./components/Scrollimage";
 
