@@ -60,7 +60,7 @@ const PAUSE_POINTS: { at: number; holdPx: number }[] = [
 
 const INTRO_END_FRAME = 200;
 const TOTAL_DOT_STOPS = PAUSE_POINTS.length + 1;
-const READY_THRESHOLD = FRAME_COUNT;
+const READY_THRESHOLD = 30;
 const HOTSPOT_SHOW_DELAY = 100;
 
 /* ================================================================
@@ -348,6 +348,48 @@ export default function ScrollFrames({ src }: { src?: string }) {
       img.src = framePath(i + 1);
       imgs[i] = img;
     }
+
+    const bgLoad = () => {
+      const BATCH_SIZE = 15;
+      const loadQueue: number[] = [];
+      
+      // 1. Intro remaining frames
+      for (let i = READY_THRESHOLD; i < 200; i++) loadQueue.push(i);
+      
+      // 2. The 3 Sections (prioritized!)
+      for (let i = 210; i < 433; i++) loadQueue.push(i);
+      for (let i = 500; i < 666; i++) loadQueue.push(i);
+      for (let i = 795; i < 900; i++) loadQueue.push(i);
+      
+      // 3. The gaps between sections
+      for (let i = 200; i < 210; i++) loadQueue.push(i);
+      for (let i = 433; i < 500; i++) loadQueue.push(i);
+      for (let i = 666; i < 795; i++) loadQueue.push(i);
+
+      let qIdx = 0;
+
+      const loadNextBatch = () => {
+        if (qIdx >= loadQueue.length) return;
+        const endIdx = Math.min(qIdx + BATCH_SIZE, loadQueue.length);
+        for (let i = qIdx; i < endIdx; i++) {
+          const idx = loadQueue[i];
+          if (loaded[idx]) continue;
+          const img = new Image();
+          img.decoding = "async";
+          img.onload = () => { loaded[idx] = true; };
+          img.onerror = () => { loaded[idx] = true; };
+          img.src = framePath(idx + 1);
+          imgs[idx] = img;
+        }
+        qIdx = endIdx;
+        setTimeout(loadNextBatch, 80);
+      };
+
+      loadNextBatch();
+    };
+
+    const bgTimer = setTimeout(bgLoad, 500);
+    return () => clearTimeout(bgTimer);
   }, []);
 
   /* ================================================================
