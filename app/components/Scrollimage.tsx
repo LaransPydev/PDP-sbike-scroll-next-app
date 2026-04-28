@@ -60,7 +60,7 @@ const PAUSE_POINTS: { at: number; holdPx: number }[] = [
 
 const INTRO_END_FRAME    = 200;
 const TOTAL_DOT_STOPS    = PAUSE_POINTS.length + 1;
-const READY_THRESHOLD    = INTRO_END_FRAME + 10;
+const READY_THRESHOLD    = 30;
 const HOTSPOT_SHOW_DELAY = 100;
 
 /* ================================================================
@@ -350,15 +350,26 @@ export default function ScrollFrames({ src }: { src?: string }) {
     }
 
     const bgLoad = () => {
-      for (let i = READY_THRESHOLD; i < FRAME_COUNT; i++) {
-        const idx    = i;
-        const img    = new Image();
-        img.decoding = "async";
-        img.onload   = () => onLoad(idx);
-        img.onerror  = () => onLoad(idx);
-        img.src      = framePath(idx + 1);
-        imgs[idx]    = img;
-      }
+      let currentIdx = READY_THRESHOLD;
+      const BATCH_SIZE = 20;
+
+      const loadNextBatch = () => {
+        if (currentIdx >= FRAME_COUNT) return;
+        const endIdx = Math.min(currentIdx + BATCH_SIZE, FRAME_COUNT);
+        for (let i = currentIdx; i < endIdx; i++) {
+          const idx    = i;
+          const img    = new Image();
+          img.decoding = "async";
+          img.onload   = () => { loaded[idx] = true; };
+          img.onerror  = () => { loaded[idx] = true; };
+          img.src      = framePath(idx + 1);
+          imgs[idx]    = img;
+        }
+        currentIdx = endIdx;
+        setTimeout(loadNextBatch, 100);
+      };
+
+      loadNextBatch();
     };
 
     const bgTimer = setTimeout(bgLoad, 800);
