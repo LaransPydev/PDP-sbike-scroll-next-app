@@ -326,31 +326,8 @@ export default function ScrollFrames({ src }: { src?: string }) {
     const loaded = loadedRef.current;
     let phase1Done = 0;
 
-    const onLoad = (i: number) => {
-      loaded[i] = true;
-      if (i < READY_THRESHOLD) {
-        phase1Done++;
-        setLoadProgress(Math.round((phase1Done / READY_THRESHOLD) * 100));
-        if (phase1Done === READY_THRESHOLD && !readyRef.current) {
-          readyRef.current = true;
-          setPreloaderLabel("Ready!");
-          setLoadProgress(100);
-          setTimeout(() => { setShowPreloader(false); setReadyToShow(true); }, 400);
-        }
-      }
-    };
-
-    for (let i = 0; i < READY_THRESHOLD; i++) {
-      const img = new Image();
-      img.decoding = "async";
-      img.onload = () => onLoad(i);
-      img.onerror = () => onLoad(i);
-      img.src = framePath(i + 1);
-      imgs[i] = img;
-    }
-
     const bgLoad = () => {
-      const BATCH_SIZE = 15;
+      const BATCH_SIZE = 5;
       const loadQueue: number[] = [];
       
       // 1. Intro remaining frames
@@ -371,25 +348,58 @@ export default function ScrollFrames({ src }: { src?: string }) {
       const loadNextBatch = () => {
         if (qIdx >= loadQueue.length) return;
         const endIdx = Math.min(qIdx + BATCH_SIZE, loadQueue.length);
+        
+        let completed = 0;
+        const total = endIdx - qIdx;
+
+        const checkDone = () => {
+          completed++;
+          if (completed === total) {
+            qIdx = endIdx;
+            setTimeout(loadNextBatch, 20);
+          }
+        };
+
         for (let i = qIdx; i < endIdx; i++) {
           const idx = loadQueue[i];
-          if (loaded[idx]) continue;
+          if (loaded[idx]) { checkDone(); continue; }
           const img = new Image();
           img.decoding = "async";
-          img.onload = () => { loaded[idx] = true; };
-          img.onerror = () => { loaded[idx] = true; };
+          img.onload = () => { loaded[idx] = true; checkDone(); };
+          img.onerror = () => { loaded[idx] = true; checkDone(); };
           img.src = framePath(idx + 1);
           imgs[idx] = img;
         }
-        qIdx = endIdx;
-        setTimeout(loadNextBatch, 80);
       };
 
       loadNextBatch();
     };
 
-    const bgTimer = setTimeout(bgLoad, 500);
-    return () => clearTimeout(bgTimer);
+    const onLoad = (i: number) => {
+      loaded[i] = true;
+      if (i < READY_THRESHOLD) {
+        phase1Done++;
+        setLoadProgress(Math.round((phase1Done / READY_THRESHOLD) * 100));
+        if (phase1Done === READY_THRESHOLD && !readyRef.current) {
+          readyRef.current = true;
+          setPreloaderLabel("Ready!");
+          setLoadProgress(100);
+          setTimeout(() => { setShowPreloader(false); setReadyToShow(true); }, 400);
+          
+          // Delay background loading so initial UI has time to render completely
+          setTimeout(bgLoad, 800);
+        }
+      }
+    };
+
+    for (let i = 0; i < READY_THRESHOLD; i++) {
+      const img = new Image();
+      img.decoding = "async";
+      img.onload = () => onLoad(i);
+      img.onerror = () => onLoad(i);
+      img.src = framePath(i + 1);
+      imgs[i] = img;
+    }
   }, []);
 
   /* ================================================================
