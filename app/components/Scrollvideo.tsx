@@ -494,7 +494,7 @@ export default function ScrollVideo({ src }: ScrollVideoProps) {
     };
 
     video.addEventListener("loadedmetadata", onMeta);
-    video.addEventListener("canplay", onCanPlay, { once: true });
+    video.addEventListener("canplaythrough", onCanPlay, { once: true });
     video.preload = "auto";
     video.load();
 
@@ -505,7 +505,7 @@ export default function ScrollVideo({ src }: ScrollVideoProps) {
       mounted = false;
       clearInterval(interval);
       video.removeEventListener("loadedmetadata", onMeta);
-      video.removeEventListener("canplay", onCanPlay);
+      video.removeEventListener("canplaythrough", onCanPlay);
     };
   }, [src]);
 
