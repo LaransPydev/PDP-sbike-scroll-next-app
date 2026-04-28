@@ -128,6 +128,26 @@ const Preloader: React.FC<{ progress: number; visible: boolean; label: string }>
 };
 
 /* ================================================================
+   BUFFERING OVERLAY
+   ================================================================ */
+const BufferingOverlay: React.FC<{ visible: boolean }> = ({ visible }) => (
+  <div style={{
+    position: "fixed", inset: 0, zIndex: 9998,
+    display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
+    background: "rgba(0,0,0,0.6)", backdropFilter: "blur(6px)",
+    opacity: visible ? 1 : 0, pointerEvents: "none",
+    transition: "opacity 0.3s ease"
+  }}>
+    <svg width="48" height="48" viewBox="0 0 50 50" style={{ animation: "spin 1s linear infinite" }}>
+      <style>{`@keyframes spin { 100% { transform: rotate(360deg); } }`}</style>
+      <circle cx="25" cy="25" r="20" fill="none" stroke="rgba(255,255,255,0.2)" strokeWidth="4" />
+      <circle cx="25" cy="25" r="20" fill="none" stroke="#dc2626" strokeWidth="4" strokeLinecap="round" strokeDasharray="90 150" />
+    </svg>
+    <div style={{ marginTop: 16, fontFamily: "'DM Mono','Courier New',monospace", fontSize: 12, color: "#fff", letterSpacing: "0.2em" }}>BUFFERING...</div>
+  </div>
+);
+
+/* ================================================================
    HOTSPOT CARD
    ================================================================ */
 const HotspotCard: React.FC<{
@@ -216,6 +236,7 @@ export default function ScrollFrames({ src }: { src?: string }) {
   const [hotspotVisible, setHotspotVisible] = useState<Record<number, boolean>>({});
   const [currentDot,     setCurrentDot]     = useState(0);
   const [showButtons,    setShowButtons]    = useState(false);
+  const [isBuffering,    setIsBuffering]    = useState(false);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef    = useRef<HTMLCanvasElement>(null);
@@ -239,6 +260,8 @@ export default function ScrollFrames({ src }: { src?: string }) {
 
   const hotspotTimerRef   = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingHotspotRef = useRef<Record<number, boolean>>({});
+  const isBufferingRef    = useRef(false);
+  const priorityLoadRef   = useRef<number | null>(null);
 
   const bp = useBreakpoint();
 
@@ -261,6 +284,18 @@ export default function ScrollFrames({ src }: { src?: string }) {
             ctx.drawImage(img, 0, 0);
             drawnFrameRef.current = target;
           }
+          if (isBufferingRef.current) {
+            isBufferingRef.current = false;
+            setIsBuffering(false);
+            if (activeTweenRef.current?.paused()) activeTweenRef.current.resume();
+          }
+        } else if (readyRef.current && introCompleteRef.current) {
+          if (!isBufferingRef.current) {
+            isBufferingRef.current = true;
+            setIsBuffering(true);
+            if (activeTweenRef.current) activeTweenRef.current.pause();
+          }
+          priorityLoadRef.current = target - 1;
         }
       }
       rafRef.current = requestAnimationFrame(loop);
@@ -354,9 +389,25 @@ export default function ScrollFrames({ src }: { src?: string }) {
       const BATCH_SIZE = 20;
 
       const loadNextBatch = () => {
-        if (currentIdx >= FRAME_COUNT) return;
-        const endIdx = Math.min(currentIdx + BATCH_SIZE, FRAME_COUNT);
-        for (let i = currentIdx; i < endIdx; i++) {
+        let startIdx = currentIdx;
+        
+        if (priorityLoadRef.current !== null) {
+           startIdx = priorityLoadRef.current;
+           while(startIdx < FRAME_COUNT && loaded[startIdx]) startIdx++;
+           if (startIdx >= FRAME_COUNT) {
+              priorityLoadRef.current = null;
+              startIdx = currentIdx;
+           }
+        } else {
+           while(startIdx < FRAME_COUNT && loaded[startIdx]) startIdx++;
+           currentIdx = startIdx;
+        }
+
+        if (startIdx >= FRAME_COUNT) return;
+
+        const endIdx = Math.min(startIdx + BATCH_SIZE, FRAME_COUNT);
+        for (let i = startIdx; i < endIdx; i++) {
+          if (loaded[i]) continue;
           const idx    = i;
           const img    = new Image();
           img.decoding = "async";
@@ -365,8 +416,11 @@ export default function ScrollFrames({ src }: { src?: string }) {
           img.src      = framePath(idx + 1);
           imgs[idx]    = img;
         }
-        currentIdx = endIdx;
-        setTimeout(loadNextBatch, 100);
+        
+        if (priorityLoadRef.current === null) {
+           currentIdx = endIdx;
+        }
+        setTimeout(loadNextBatch, 50);
       };
 
       loadNextBatch();
@@ -561,6 +615,7 @@ export default function ScrollFrames({ src }: { src?: string }) {
   return (
     <>
       <Preloader progress={loadProgress} visible={showPreloader} label={preloaderLabel} />
+      <BufferingOverlay visible={isBuffering} />
 
       <div ref={containerRef} style={{ width: "100%", height: "100vh", background: "#000", overflow: "hidden", position: "relative" }}>
 
