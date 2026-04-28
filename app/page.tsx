@@ -9,8 +9,13 @@ import Scrollfast from "./components/Scrollfast";
 import Scrollfinal from "./components/Scrollfinal";
 import Topnav from "./components/Topnav";
 import ScrollVersion from "./components/scrollversion";
+import Scrollvideo from "./components/Scrollimage";
+import ScrollVideo from "./components/Scrollimage";
+import Scrollimage from "./components/Scrollimage";
 
 const NAV_HEIGHT = 112;
+
+const videourl = "/0000-0400 3 (2).mkv"
 
 export default function Home() {
   return (
@@ -20,10 +25,10 @@ export default function Home() {
       <Topnav />
 
       {/* ② Spacer so content starts below the fixed nav */}
-      <div style={{ height: NAV_HEIGHT }} />
+
 
       {/* ③ Hero — user scrolls past this normally */}
-      <div style={{ position: "relative",  backgroundColor: "#fff" }}>
+      <div style={{ position: "relative", backgroundColor: "#fff" }}>
         <Hero />
       </div>
 
@@ -35,9 +40,10 @@ export default function Home() {
       {/* ⑤ 3D scroll zone — sticky wrapper + boundary gating is inside Scrollfinal */}
       {/* <Scrollfinal /> */}
       {/* <ScrollVersion/> */}
-      <Scrollfast/>
+      {/* <Scrollfast/> */}
       {/* <Scroll3DCanvas/> */}
-
+      <Scrollimage src="/frames/" />
+      {/* <ScrollVideo src={videourl} /> */}
       {/* <ImageSection/> */}
 
       {/* ⑥ Footer */}

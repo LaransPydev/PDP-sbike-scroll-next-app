@@ -116,51 +116,6 @@ const Topnav = () => {
           </div>
         </div>
       )}
-
-      {/* Product Sub-bar */}
-      <div className="flex items-center justify-between px-4 py-2.5 gap-2">
-        {/* Product Title + Tabs */}
-        <div className="flex items-center gap-6 min-w-0 flex-1">
-          {/* Added truncate so long titles don't break mobile layout */}
-          <h2 className="text-sm sm:text-lg font-semibold text-gray-900 truncate">
-            Sportstech sBike 21.5" display
-          </h2>
-          <div className="hidden lg:flex items-center gap-5">
-            {["Overview", "Technical data", "Reviews"].map((tab) => (
-              <button
-                key={tab}
-                className="text-sm text-gray-500 hover:text-gray-900 transition-colors whitespace-nowrap"
-              >
-                {tab}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* Price + CTA */}
-        <div className="flex items-center gap-3 flex-shrink-0">
-          <div className="text-right hidden md:block">
-            <div className="flex items-center gap-2 justify-end">
-              <span className="text-red-600 font-bold text-[10px] sm:text-xs">26% savings</span>
-              <span className="text-gray-400 line-through text-[10px] sm:text-xs">€1,767.80</span>
-            </div>
-            <div className="flex items-center gap-0.5 justify-end">
-              <span className="text-lg sm:text-xl font-bold text-gray-900">€1,299.44</span>
-              <span className="text-gray-400 text-xs">*</span>
-            </div>
-            <p className="text-gray-400 text-[10px] sm:text-xs">VAT included.</p>
-          </div>
-          
-          {/* Mobile Only Price Summary (Optional, purely to save space) */}
-          <div className="block md:hidden text-right">
-             <span className="text-sm font-bold text-gray-900">€1,299.44</span>
-          </div>
-
-          <button className="bg-red-600 hover:bg-red-700 text-white font-semibold px-3 sm:px-4 py-1.5 sm:py-2 rounded-full transition-colors text-xs sm:text-sm whitespace-nowrap">
-            Add to Cart
-          </button>
-        </div>
-      </div>
     </div>
   );
 };
