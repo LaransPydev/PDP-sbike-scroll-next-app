@@ -506,7 +506,7 @@ export default function ScrollFrames({ src }: { src?: string }) {
 
     const progress = time / tlRef.current.duration();
     const s = st.start as number, e = st.end as number;
-    const targetY = s + progress * (e - s);
+    const targetY = s + progress * (e - s) + 10;
 
     gsap.to(window, {
       scrollTo: { y: targetY, autoKill: false },
@@ -530,7 +530,7 @@ export default function ScrollFrames({ src }: { src?: string }) {
     const progress = time / tlRef.current.duration();
     
     const s = st.start as number, e = st.end as number;
-    const targetY = s + progress * (e - s);
+    const targetY = s + progress * (e - s) + 10;
 
     gsap.to(window, {
       scrollTo: { y: targetY, autoKill: false },
