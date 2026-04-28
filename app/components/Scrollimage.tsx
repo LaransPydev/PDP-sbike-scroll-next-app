@@ -60,7 +60,7 @@ const PAUSE_POINTS: { at: number; holdPx: number }[] = [
 
 const INTRO_END_FRAME = 200;
 const TOTAL_DOT_STOPS = PAUSE_POINTS.length + 1;
-const READY_THRESHOLD = 5;
+const READY_THRESHOLD = FRAME_COUNT;
 const HOTSPOT_SHOW_DELAY = 100;
 
 /* ================================================================
@@ -326,80 +326,43 @@ export default function ScrollFrames({ src }: { src?: string }) {
     const loaded = loadedRef.current;
     let phase1Done = 0;
 
-    const bgLoad = () => {
-      const BATCH_SIZE = 5;
-      const loadQueue: number[] = [];
-      
-      // 1. Intro remaining frames
-      for (let i = READY_THRESHOLD; i < 200; i++) loadQueue.push(i);
-      
-      // 2. The 3 Sections (prioritized!)
-      for (let i = 210; i < 433; i++) loadQueue.push(i);
-      for (let i = 500; i < 666; i++) loadQueue.push(i);
-      for (let i = 795; i < 900; i++) loadQueue.push(i);
-      
-      // 3. The gaps between sections
-      for (let i = 200; i < 210; i++) loadQueue.push(i);
-      for (let i = 433; i < 500; i++) loadQueue.push(i);
-      for (let i = 666; i < 795; i++) loadQueue.push(i);
+    const BATCH_SIZE = 15;
+    let qIdx = 0;
 
-      let qIdx = 0;
+    const loadNextBatch = () => {
+      if (qIdx >= READY_THRESHOLD) return;
+      const endIdx = Math.min(qIdx + BATCH_SIZE, READY_THRESHOLD);
+      let completedInBatch = 0;
+      const totalInBatch = endIdx - qIdx;
 
-      const loadNextBatch = () => {
-        if (qIdx >= loadQueue.length) return;
-        const endIdx = Math.min(qIdx + BATCH_SIZE, loadQueue.length);
-        
-        let completed = 0;
-        const total = endIdx - qIdx;
-
-        const checkDone = () => {
-          completed++;
-          if (completed === total) {
-            qIdx = endIdx;
-            setTimeout(loadNextBatch, 20);
-          }
-        };
-
-        for (let i = qIdx; i < endIdx; i++) {
-          const idx = loadQueue[i];
-          if (loaded[idx]) { checkDone(); continue; }
-          const img = new Image();
-          img.decoding = "async";
-          img.onload = () => { loaded[idx] = true; checkDone(); };
-          img.onerror = () => { loaded[idx] = true; checkDone(); };
-          img.src = framePath(idx + 1);
-          imgs[idx] = img;
-        }
-      };
-
-      loadNextBatch();
-    };
-
-    const onLoad = (i: number) => {
-      loaded[i] = true;
-      if (i < READY_THRESHOLD) {
+      const checkDone = () => {
+        completedInBatch++;
         phase1Done++;
         setLoadProgress(Math.round((phase1Done / READY_THRESHOLD) * 100));
+
         if (phase1Done === READY_THRESHOLD && !readyRef.current) {
           readyRef.current = true;
           setPreloaderLabel("Ready!");
           setLoadProgress(100);
           setTimeout(() => { setShowPreloader(false); setReadyToShow(true); }, 400);
-          
-          // Delay background loading so initial UI has time to render completely
-          setTimeout(bgLoad, 800);
+        } else if (completedInBatch === totalInBatch) {
+          qIdx = endIdx;
+          setTimeout(loadNextBatch, 5); // Start next batch
         }
+      };
+
+      for (let i = qIdx; i < endIdx; i++) {
+        if (loaded[i]) { checkDone(); continue; }
+        const img = new Image();
+        img.decoding = "async";
+        img.onload = () => { loaded[i] = true; checkDone(); };
+        img.onerror = () => { loaded[i] = true; checkDone(); };
+        img.src = framePath(i + 1);
+        imgs[i] = img;
       }
     };
 
-    for (let i = 0; i < READY_THRESHOLD; i++) {
-      const img = new Image();
-      img.decoding = "async";
-      img.onload = () => onLoad(i);
-      img.onerror = () => onLoad(i);
-      img.src = framePath(i + 1);
-      imgs[i] = img;
-    }
+    loadNextBatch();
   }, []);
 
   /* ================================================================
