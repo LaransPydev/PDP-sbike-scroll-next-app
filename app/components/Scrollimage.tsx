@@ -339,12 +339,10 @@ export default function ScrollFrames({ src }: { src?: string }) {
       }
     };
 
-    // Controlled Concurrency Loading 
-    // Since we are using an S3 CDN with HTTP/2, we can crank this up to leverage 
-    // parallel multiplexing and download the 900 images much faster.
+    // Controlled Concurrency Loading
     let activeRequests = 0;
     let nextImageIndex = 0;
-    const MAX_CONCURRENT = 150;
+    const MAX_CONCURRENT = 20;
 
     const loadNext = () => {
       while (activeRequests < MAX_CONCURRENT && nextImageIndex < READY_THRESHOLD) {
@@ -353,13 +351,13 @@ export default function ScrollFrames({ src }: { src?: string }) {
         const img = new Image();
         img.crossOrigin = "anonymous";
         img.decoding = "async";
-        
+
         const handleComplete = () => {
           activeRequests--;
           onLoad(i);
           loadNext();
         };
-        
+
         img.onload = handleComplete;
         img.onerror = handleComplete;
         img.src = framePath(i + 1);
@@ -370,7 +368,6 @@ export default function ScrollFrames({ src }: { src?: string }) {
     loadNext();
 
     const bgLoad = () => {
-      const BATCH_SIZE = 15;
       const loadQueue: number[] = [];
 
       // 1. Intro remaining frames
@@ -387,23 +384,27 @@ export default function ScrollFrames({ src }: { src?: string }) {
       for (let i = 666; i < 795; i++) loadQueue.push(i);
 
       let qIdx = 0;
+      let bgActiveRequests = 0;
+      const MAX_BG_CONCURRENT = 10;
 
       const loadNextBatch = () => {
-        if (qIdx >= loadQueue.length) return;
-        const endIdx = Math.min(qIdx + BATCH_SIZE, loadQueue.length);
-        for (let i = qIdx; i < endIdx; i++) {
-          const idx = loadQueue[i];
+        while (bgActiveRequests < MAX_BG_CONCURRENT && qIdx < loadQueue.length) {
+          const idx = loadQueue[qIdx++];
           if (loaded[idx]) continue;
+          bgActiveRequests++;
           const img = new Image();
           img.crossOrigin = "anonymous";
           img.decoding = "async";
-          img.onload = () => { loaded[idx] = true; };
-          img.onerror = () => { loaded[idx] = true; };
+          const handleComplete = () => {
+            loaded[idx] = true;
+            bgActiveRequests--;
+            loadNextBatch();
+          };
+          img.onload = handleComplete;
+          img.onerror = handleComplete;
           img.src = framePath(idx + 1);
           imgs[idx] = img;
         }
-        qIdx = endIdx;
-        setTimeout(loadNextBatch, 80);
       };
 
       loadNextBatch();
