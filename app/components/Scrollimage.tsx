@@ -334,7 +334,7 @@ export default function ScrollFrames({ src }: { src?: string }) {
           readyRef.current = true;
           setPreloaderLabel("Ready!");
           setLoadProgress(100);
-          setTimeout(() => { setShowPreloader(false); setReadyToShow(true); }, 400);
+          setTimeout(() => { setShowPreloader(false); setReadyToShow(true); bgLoad(); }, 400);
         }
       }
     };
@@ -409,8 +409,7 @@ export default function ScrollFrames({ src }: { src?: string }) {
       loadNextBatch();
     };
 
-    const bgTimer = setTimeout(bgLoad, 500);
-    return () => clearTimeout(bgTimer);
+    // No premature bgTimer! bgLoad is now triggered securely after phase1 completes.
   }, []);
 
   /* ================================================================
