@@ -60,7 +60,7 @@ const PAUSE_POINTS: { at: number; holdPx: number }[] = [
 
 const INTRO_END_FRAME = 200;
 const TOTAL_DOT_STOPS = PAUSE_POINTS.length + 1;
-const READY_THRESHOLD = FRAME_COUNT;
+const READY_THRESHOLD = 300;
 const HOTSPOT_SHOW_DELAY = 100;
 
 /* ================================================================

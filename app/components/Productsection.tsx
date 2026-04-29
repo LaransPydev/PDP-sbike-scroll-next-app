@@ -201,7 +201,7 @@ export default function ProductSection() {
             !Array.isArray(row) ? (
               // Adjusted heights for responsiveness
               <div key={(row as any).id} className="w-full overflow-hidden bg-gray-100 h-[350px] sm:h-[450px] lg:h-[540px]">
-                <img src={(row as any).src} alt={(row as any).alt}
+                <img src={(row as any).src} alt={(row as any).alt} loading="lazy"
                   className="w-full h-full object-cover transition-transform duration-700 hover:scale-105" />
               </div>
             ) : (
@@ -209,7 +209,7 @@ export default function ProductSection() {
               <div key={(row as any[])[0].id} className="flex h-[250px] sm:h-[350px] lg:h-[480px]">
                 {(row as any[]).map((item) => (
                   <div key={item.id} className="flex-1 overflow-hidden bg-gray-100 h-full">
-                    <img src={item.src} alt={item.alt}
+                    <img src={item.src} alt={item.alt} loading="lazy"
                       className="w-full h-full object-cover transition-transform duration-700 hover:scale-105" />
                   </div>
                 ))}
@@ -272,7 +272,7 @@ export default function ProductSection() {
               <div className="mb-5">
                 <p className="text-xs font-black tracking-widest uppercase text-gray-800 mb-3">SPORTSTECH LIVE</p>
                 <div className="flex gap-3 items-start p-3 rounded-lg bg-gray-50 border border-gray-100 mb-3">
-                  <img src="https://images.unsplash.com/photo-1571019613454-1cb2f99b2d8b?w=80&q=60"
+                  <img src="https://images.unsplash.com/photo-1571019613454-1cb2f99b2d8b?w=80&q=60" loading="lazy"
                     className="w-14 h-10 rounded object-cover flex-shrink-0" alt="app" />
                   <div>
                     <p className="text-xs font-bold text-gray-900 mb-0.5">Trainiere smarter mit Sportstech Live</p>
@@ -310,7 +310,7 @@ export default function ProductSection() {
                   {accessories.map((a) => (
                     <div key={a.name} className="border border-gray-200 rounded-lg p-2 sm:p-3 flex flex-col">
                       <div className="w-full h-20 sm:h-24 bg-gray-100 rounded mb-2 overflow-hidden flex-shrink-0">
-                        <img src={a.img} alt={a.name} className="w-full h-full object-cover" />
+                        <img src={a.img} alt={a.name} loading="lazy" className="w-full h-full object-cover" />
                       </div>
                       <p className="text-xs text-gray-800 font-medium leading-tight mb-1 flex-1">{a.name}</p>
                       {a.desc && <p className="text-[10px] sm:text-xs text-gray-500 mb-1 line-clamp-2">{a.desc}</p>}
