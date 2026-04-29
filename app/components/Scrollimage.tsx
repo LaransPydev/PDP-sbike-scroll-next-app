@@ -443,16 +443,29 @@ export default function ScrollFrames({ src }: { src?: string }) {
       // 3. Transition gap frames (least important)
       const bgQueue: number[] = [];
 
-      for (let i = READY_THRESHOLD; i < 210; i++) bgQueue.push(i);
+      for (let i = READY_THRESHOLD; i < 200; i++) bgQueue.push(i);
 
       // Sections — highest priority background frames
-      for (let i = 210; i < 433; i++) bgQueue.push(i);
-      for (let i = 500; i < 666; i++) bgQueue.push(i);
-      for (let i = 795; i < 900; i++) bgQueue.push(i);
+      for (let i = 210; i < 433; i++) {
+        if (i % 2 === 0) bgQueue.push(i);
+      }
+      for (let i = 500; i < 666; i++) {
+        if (i % 2 === 0) bgQueue.push(i);
+      }
+      for (let i = 795; i < 900; i++) {
+        if (i % 2 === 0) bgQueue.push(i);
+      }
 
       // Gaps between sections
-      for (let i = 433; i < 500; i++) bgQueue.push(i);
-      for (let i = 666; i < 795; i++) bgQueue.push(i);
+      for (let i = 200; i < 210; i++) {
+        if (i % 2 === 0) bgQueue.push(i);
+      }
+      for (let i = 433; i < 500; i++) {
+        if (i % 2 === 0) bgQueue.push(i);
+      }
+      for (let i = 666; i < 795; i++) {
+        if (i % 2 === 0) bgQueue.push(i);
+      }
 
       let bgActive = 0;
       let bgIndex = 0;
