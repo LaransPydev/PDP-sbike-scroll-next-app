@@ -4,7 +4,7 @@ const Hero = () => {
       
       {/* Responsive Video (Visible on all screens) */}
       <video 
-        src="/28_08_2024_sbike_short_desktop (1).mp4" 
+        src="https://www.sportstech.de/media/36/57/da/1750176850/28_08_2024_sbike_short_desktop.mp4" 
         autoPlay 
         loop 
         muted 

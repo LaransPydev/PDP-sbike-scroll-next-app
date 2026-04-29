@@ -1,19 +1,11 @@
 "use client";
 
 import dynamic from "next/dynamic";
-
-import Scroll3DCanvas from "./components/3dcanvasss";
 import FooterSection from "./components/Footer";
 import Hero from "./components/Hero";
-import ImageSection from "./components/Imagesection";
 import Productsection from "./components/Productsection";
-import Scrollfast from "./components/Scrollfast";
-import Scrollfinal from "./components/Scrollfinal";
 import Topnav from "./components/Topnav";
-import ScrollVersion from "./components/scrollversion";
-import Scrollvideo from "./components/Scrollvideo";
 import ScrollVideo from "./components/Scrollimage";
-
 const Scrollimage = dynamic(() => import("./components/Scrollimage"), { ssr: false });
 
 const NAV_HEIGHT = 112;

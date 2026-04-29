@@ -19,8 +19,9 @@ if (typeof window !== "undefined") {
    ================================================================ */
 const FRAME_COUNT = 900;
 
-const framePath = (i: number) => `/frames/${i}.webp`;
-
+// Insert your CDN URL here (e.g. "https://my-cdn.com"). Leave empty to use local files.
+const CDN_BASE_URL = "https://s3.us-east-1.amazonaws.com/sportstech.team/dev_assets";
+const framePath = (i: number) => `${CDN_BASE_URL}/frames/${i}.webp`;
 
 const SECTIONS = [
   { id: 1, name: "Workout", frameStart: 210, frameEnd: 433 },
@@ -60,7 +61,7 @@ const PAUSE_POINTS: { at: number; holdPx: number }[] = [
 
 const INTRO_END_FRAME = 200;
 const TOTAL_DOT_STOPS = PAUSE_POINTS.length + 1;
-const READY_THRESHOLD = 300;
+const READY_THRESHOLD = 200;
 const HOTSPOT_SHOW_DELAY = 100;
 
 /* ================================================================
@@ -271,9 +272,7 @@ export default function ScrollFrames({ src }: { src?: string }) {
   /* ================================================================
      SET TARGET FRAME
      ================================================================ */
-  /* ================================================================
-     SET TARGET FRAME
-     ================================================================ */
+
   const setTargetFrame = useCallback((frame: number) => {
     targetFrameRef.current = frame;
 
@@ -340,14 +339,35 @@ export default function ScrollFrames({ src }: { src?: string }) {
       }
     };
 
-    for (let i = 0; i < READY_THRESHOLD; i++) {
-      const img = new Image();
-      img.decoding = "async";
-      img.onload = () => onLoad(i);
-      img.onerror = () => onLoad(i);
-      img.src = framePath(i + 1);
-      imgs[i] = img;
-    }
+    // Controlled Concurrency Loading 
+    // Since we are using an S3 CDN with HTTP/2, we can crank this up to leverage 
+    // parallel multiplexing and download the 900 images much faster.
+    let activeRequests = 0;
+    let nextImageIndex = 0;
+    const MAX_CONCURRENT = 150;
+
+    const loadNext = () => {
+      while (activeRequests < MAX_CONCURRENT && nextImageIndex < READY_THRESHOLD) {
+        const i = nextImageIndex++;
+        activeRequests++;
+        const img = new Image();
+        img.crossOrigin = "anonymous";
+        img.decoding = "async";
+        
+        const handleComplete = () => {
+          activeRequests--;
+          onLoad(i);
+          loadNext();
+        };
+        
+        img.onload = handleComplete;
+        img.onerror = handleComplete;
+        img.src = framePath(i + 1);
+        imgs[i] = img;
+      }
+    };
+
+    loadNext();
 
     const bgLoad = () => {
       const BATCH_SIZE = 15;
@@ -375,6 +395,7 @@ export default function ScrollFrames({ src }: { src?: string }) {
           const idx = loadQueue[i];
           if (loaded[idx]) continue;
           const img = new Image();
+          img.crossOrigin = "anonymous";
           img.decoding = "async";
           img.onload = () => { loaded[idx] = true; };
           img.onerror = () => { loaded[idx] = true; };
