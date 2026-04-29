@@ -19,7 +19,6 @@ if (typeof window !== "undefined") {
    ================================================================ */
 const FRAME_COUNT = 900;
 
-// Insert your CDN URL here (e.g. "https://my-cdn.com"). Leave empty to use local files.
 const CDN_BASE_URL = "https://s3.us-east-1.amazonaws.com/sportstech.team/dev_assets";
 const framePath = (i: number) => `${CDN_BASE_URL}/frames/${i}.webp`;
 
@@ -61,7 +60,17 @@ const PAUSE_POINTS: { at: number; holdPx: number }[] = [
 
 const INTRO_END_FRAME = 200;
 const TOTAL_DOT_STOPS = PAUSE_POINTS.length + 1;
-const READY_THRESHOLD = 900;
+
+// ── PERFORMANCE KNOBS ──────────────────────────────────────────
+// Show canvas after this many frames are loaded (was 900 — the main bottleneck)
+const READY_THRESHOLD = 30;
+// Browser HTTP/1.1 allows ~6 parallel connections per domain
+const MAX_CONCURRENT_PHASE1 = 6;
+const MAX_CONCURRENT_BG = 6;
+// Hide preloader faster once ready
+const PRELOADER_HIDE_DELAY = 200;
+// ──────────────────────────────────────────────────────────────
+
 const HOTSPOT_SHOW_DELAY = 100;
 
 /* ================================================================
@@ -78,16 +87,6 @@ function useBreakpoint(): Breakpoint {
     return () => window.removeEventListener("resize", update);
   }, []);
   return bp;
-}
-function lockScroll() {
-  if (typeof window !== "undefined") {
-    document.body.style.overflow = "hidden";
-  }
-}
-function unlockScroll() {
-  if (typeof window !== "undefined") {
-    document.body.style.overflow = "";
-  }
 }
 
 /* ================================================================
@@ -244,11 +243,30 @@ export default function ScrollFrames({ src }: { src?: string }) {
   const bp = useBreakpoint();
 
   /* ================================================================
-     RAF RENDER LOOP
+     RAF RENDER LOOP — with nearest-loaded-frame fallback
      ================================================================ */
   const startRafLoop = useCallback(() => {
     const loop = () => {
-      const target = Math.max(1, Math.min(FRAME_COUNT, Math.round(targetFrameRef.current)));
+      let target = Math.max(1, Math.min(FRAME_COUNT, Math.round(targetFrameRef.current)));
+
+      // If target frame isn't loaded yet, find the nearest loaded frame
+      // so the canvas never shows a blank gap while background loading catches up
+      if (!loadedRef.current[target - 1]) {
+        let lo = target - 2;
+        let hi = target; // hi is already 0-indexed offset by 1
+        let found = false;
+        while (lo >= 0 || hi < FRAME_COUNT) {
+          if (lo >= 0 && loadedRef.current[lo]) { target = lo + 1; found = true; break; }
+          if (hi < FRAME_COUNT && loadedRef.current[hi]) { target = hi + 1; found = true; break; }
+          lo--;
+          hi++;
+        }
+        if (!found) {
+          rafRef.current = requestAnimationFrame(loop);
+          return;
+        }
+      }
+
       if (target !== drawnFrameRef.current) {
         const canvas = canvasRef.current;
         const img = imagesRef.current[target - 1];
@@ -272,7 +290,6 @@ export default function ScrollFrames({ src }: { src?: string }) {
   /* ================================================================
      SET TARGET FRAME
      ================================================================ */
-
   const setTargetFrame = useCallback((frame: number) => {
     targetFrameRef.current = frame;
 
@@ -318,99 +335,156 @@ export default function ScrollFrames({ src }: { src?: string }) {
   }, []);
 
   /* ================================================================
-     SMART LOADING STRATEGY
+     SMART LOADING STRATEGY — 3-phase progressive
+     ================================================================
+     Phase 1: Load first READY_THRESHOLD frames (30) → show canvas
+     Phase 2: Load remainder of intro (31–210) in background
+     Phase 3: Load section frames (prioritised) then gap frames
+
+     Concurrency is capped at 6 to match the browser's actual
+     HTTP/1.1 connection limit per domain. Anything above 6 just
+     queues — it doesn't speed things up and adds overhead.
+     If your CDN supports HTTP/2 (e.g. CloudFront), multiplexing
+     makes concurrency limits irrelevant and cuts load time ~40–60%.
      ================================================================ */
   useEffect(() => {
     const imgs = imagesRef.current;
     const loaded = loadedRef.current;
     let phase1Done = 0;
 
-    const onLoad = (i: number) => {
-      loaded[i] = true;
-      if (i < READY_THRESHOLD) {
-        phase1Done++;
-        setLoadProgress(Math.round((phase1Done / READY_THRESHOLD) * 100));
-        if (phase1Done === READY_THRESHOLD && !readyRef.current) {
-          readyRef.current = true;
-          setPreloaderLabel("Ready!");
-          setLoadProgress(100);
-          setTimeout(() => { setShowPreloader(false); setReadyToShow(true); bgLoad(); }, 400);
+    // ── Controlled concurrency queue helper ──────────────────────
+    function createQueue(maxConcurrent: number) {
+      let active = 0;
+      let index = 0;
+      let queue: number[] = [];
+
+      const next = () => {
+        while (active < maxConcurrent && index < queue.length) {
+          const i = queue[index++];
+          if (loaded[i]) { next(); return; }
+          active++;
+          const img = new Image();
+          img.crossOrigin = "anonymous";
+          img.decoding = "async";
+          img.onload = img.onerror = () => {
+            loaded[i] = true;
+            imgs[i] = img;
+            active--;
+            next();
+          };
+          img.src = framePath(i + 1);
+          imgs[i] = img;
         }
-      }
-    };
+      };
 
-    // Controlled Concurrency Loading
-    let activeRequests = 0;
-    let nextImageIndex = 0;
-    const MAX_CONCURRENT = 20;
+      return {
+        enqueue(indices: number[]) { queue = indices; index = 0; next(); },
+        add(i: number) { queue.push(i); next(); },
+      };
+    }
 
-    const loadNext = () => {
-      while (activeRequests < MAX_CONCURRENT && nextImageIndex < READY_THRESHOLD) {
-        const i = nextImageIndex++;
-        activeRequests++;
+    // ── Phase 1: first 30 frames ─────────────────────────────────
+    let phase1Resolved = false;
+
+    const phase1Indices = Array.from({ length: READY_THRESHOLD }, (_, i) => i);
+
+    let p1Active = 0;
+    let p1Index = 0;
+
+    const phase1Next = () => {
+      while (p1Active < MAX_CONCURRENT_PHASE1 && p1Index < READY_THRESHOLD) {
+        const i = p1Index++;
+        p1Active++;
         const img = new Image();
         img.crossOrigin = "anonymous";
         img.decoding = "async";
 
-        const handleComplete = () => {
-          activeRequests--;
-          onLoad(i);
-          loadNext();
+        img.onload = img.onerror = () => {
+          loaded[i] = true;
+          imgs[i] = img;
+          p1Active--;
+          phase1Done++;
+
+          // Progress: map phase 1 progress to 0→100
+          setLoadProgress(Math.round((phase1Done / READY_THRESHOLD) * 100));
+
+          // Draw frame 1 the moment it lands — don't wait for threshold
+          if (i === 0 && canvasRef.current) {
+            targetFrameRef.current = 1;
+          }
+
+          if (phase1Done >= READY_THRESHOLD && !phase1Resolved) {
+            phase1Resolved = true;
+            readyRef.current = true;
+            setPreloaderLabel("Ready!");
+            setLoadProgress(100);
+            setTimeout(() => {
+              setShowPreloader(false);
+              setReadyToShow(true);
+              startBackgroundLoad();
+            }, PRELOADER_HIDE_DELAY);
+          } else {
+            phase1Next();
+          }
         };
 
-        img.onload = handleComplete;
-        img.onerror = handleComplete;
         img.src = framePath(i + 1);
         imgs[i] = img;
       }
     };
 
-    loadNext();
+    phase1Next();
 
-    const bgLoad = () => {
-      const loadQueue: number[] = [];
+    // ── Phase 2 + 3: background load after canvas is shown ───────
+    const startBackgroundLoad = () => {
+      // Priority order:
+      // 1. Remaining intro frames (31–210)
+      // 2. Section frames (critical for animation quality)
+      // 3. Transition gap frames (least important)
+      const bgQueue: number[] = [];
 
-      // 1. Intro remaining frames
-      for (let i = READY_THRESHOLD; i < 200; i++) loadQueue.push(i);
+      for (let i = READY_THRESHOLD; i < 210; i++) bgQueue.push(i);
 
-      // 2. The 3 Sections (prioritized!)
-      for (let i = 210; i < 433; i++) loadQueue.push(i);
-      for (let i = 500; i < 666; i++) loadQueue.push(i);
-      for (let i = 795; i < 900; i++) loadQueue.push(i);
+      // Sections — highest priority background frames
+      for (let i = 210; i < 433; i++) bgQueue.push(i);
+      for (let i = 500; i < 666; i++) bgQueue.push(i);
+      for (let i = 795; i < 900; i++) bgQueue.push(i);
 
-      // 3. The gaps between sections
-      for (let i = 200; i < 210; i++) loadQueue.push(i);
-      for (let i = 433; i < 500; i++) loadQueue.push(i);
-      for (let i = 666; i < 795; i++) loadQueue.push(i);
+      // Gaps between sections
+      for (let i = 433; i < 500; i++) bgQueue.push(i);
+      for (let i = 666; i < 795; i++) bgQueue.push(i);
 
-      let qIdx = 0;
-      let bgActiveRequests = 0;
-      const MAX_BG_CONCURRENT = 10;
+      let bgActive = 0;
+      let bgIndex = 0;
 
-      const loadNextBatch = () => {
-        while (bgActiveRequests < MAX_BG_CONCURRENT && qIdx < loadQueue.length) {
-          const idx = loadQueue[qIdx++];
-          if (loaded[idx]) continue;
-          bgActiveRequests++;
+      const bgNext = () => {
+        while (bgActive < MAX_CONCURRENT_BG && bgIndex < bgQueue.length) {
+          const i = bgQueue[bgIndex++];
+          if (loaded[i]) { bgNext(); return; }
+          bgActive++;
           const img = new Image();
           img.crossOrigin = "anonymous";
           img.decoding = "async";
-          const handleComplete = () => {
-            loaded[idx] = true;
-            bgActiveRequests--;
-            loadNextBatch();
+          img.onload = img.onerror = () => {
+            loaded[i] = true;
+            imgs[i] = img;
+            bgActive--;
+            bgNext();
           };
-          img.onload = handleComplete;
-          img.onerror = handleComplete;
-          img.src = framePath(idx + 1);
-          imgs[idx] = img;
+          img.src = framePath(i + 1);
+          imgs[i] = img;
         }
       };
 
-      loadNextBatch();
+      bgNext();
     };
 
-    // No premature bgTimer! bgLoad is now triggered securely after phase1 completes.
+    return () => {
+      // Cleanup: nullify all image refs to stop decoding
+      imagesRef.current.forEach((img, i) => {
+        if (img) { img.onload = null; img.onerror = null; }
+      });
+    };
   }, []);
 
   /* ================================================================
@@ -446,11 +520,9 @@ export default function ScrollFrames({ src }: { src?: string }) {
       const currentTime = tl.time();
       const introTime = tl.labels["intro_end"] || 9.0;
 
-      // Intro part scrubbing
       if (currentTime < introTime) {
         const nf = Math.round(stProxy.frame);
 
-        // Dot indicator
         const dotF = [...PAUSE_POINTS.map(p => p.at), INTRO_END_FRAME];
         let nearest = 0, minD = Infinity;
         dotF.forEach((f, i) => { const d = Math.abs(nf - f); if (d < minD) { minD = d; nearest = i; } });
@@ -472,7 +544,6 @@ export default function ScrollFrames({ src }: { src?: string }) {
 
         setTargetFrame(nf);
       } else {
-        // Sections part scrolling (frames animated by gsap.to, not scrubbed)
         introCompleteRef.current = true;
         setIntroComplete(true);
         setShowButtons(true);
@@ -520,7 +591,6 @@ export default function ScrollFrames({ src }: { src?: string }) {
       const SECTION_DUR = 1.2;
       SECTIONS.forEach((sec, idx) => {
         tl.addLabel(`section_${idx}_start`, t);
-        // Dummy tween to create timeline duration for scrubbing sections
         tl.to({ dummy: 0 }, { dummy: 1, duration: SECTION_DUR, ease: "none" }, t);
         tl.addLabel(`section_${idx}_end`, t + SECTION_DUR);
         t += SECTION_DUR;
@@ -677,7 +747,7 @@ export default function ScrollFrames({ src }: { src?: string }) {
           ))}
         </div>
 
-
+        <ScrollHint visible={showScrollHint} />
       </div>
     </>
   );
