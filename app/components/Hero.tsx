@@ -1,3 +1,4 @@
+// app/components/Hero.tsx
 const Hero = () => {
   return (
     <div className="w-full h-screen relative overflow-hidden bg-gray-900">
@@ -9,6 +10,7 @@ const Hero = () => {
         loop 
         muted 
         playsInline
+        preload="none"
         className="block w-full h-full object-cover"
       />
       

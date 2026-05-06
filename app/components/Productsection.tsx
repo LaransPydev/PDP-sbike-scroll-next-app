@@ -1,3 +1,4 @@
+// app/components/Productsection.tsx
 import { useState, useRef, useLayoutEffect } from "react";
 import Image from "next/image";
 

@@ -1,3 +1,4 @@
+// app/components/Scrollimage.tsx
 "use client";
 
 import React, {
@@ -18,9 +19,7 @@ if (typeof window !== "undefined") {
    CONFIG
    ================================================================ */
 const FRAME_COUNT = 900;
-
-// Insert your CDN URL here (e.g. "https://my-cdn.com"). Leave empty to use local files.
-const CDN_BASE_URL = "https://s3.us-east-1.amazonaws.com/sportstech.team/dev_assets";
+const CDN_BASE_URL = "https://do55ukdqgl59f.cloudfront.net";
 const framePath = (i: number) => `${CDN_BASE_URL}/frames/${i}.webp`;
 
 const SECTIONS = [
@@ -35,7 +34,7 @@ const HOTSPOTS = [
     showDuringSection: 1,
     title: "Dynamic LED Light",
     desc: "color changing LED respond to your speed that enhances focus and energy",
-    src: "https://s3.us-east-1.amazonaws.com/sportstech.team/dev_assets/incandescent-light-bulb-svgrepo-com%201.svg",
+    src: "https://do55ukdqgl59f.cloudfront.net/incandescent-light-bulb-svgrepo-com%201.svg",
     cardStyle: { bottom: "20%", right: "17%" } as React.CSSProperties,
     lineFrom: "left" as const,
     showAtFrame: { start: 45, end: 57 },
@@ -45,7 +44,7 @@ const HOTSPOTS = [
     showDuringSection: 2,
     title: "21.5 Display",
     desc: "With the 360-degree swiveling touch display,your workouts are more flexible than ever!",
-    src: "https://s3.us-east-1.amazonaws.com/sportstech.team/dev_assets/incandescent-light-bulb-svgrepo-com%201.svg",
+    src: "https://do55ukdqgl59f.cloudfront.net/incandescent-light-bulb-svgrepo-com%201.svg",
     cardStyle: { top: "25%", left: "6%" } as React.CSSProperties,
     lineFrom: "right" as const,
     showAtFrame: { start: 110, end: 150 },
@@ -53,16 +52,15 @@ const HOTSPOTS = [
 ];
 
 const SCROLL_DISTANCE = 6000;
-
 const PAUSE_POINTS: { at: number; holdPx: number }[] = [
   { at: 50, holdPx: 300 },
   { at: 130, holdPx: 200 },
 ];
-
 const INTRO_END_FRAME = 200;
 const TOTAL_DOT_STOPS = PAUSE_POINTS.length + 1;
-const READY_THRESHOLD = 900;
+const READY_THRESHOLD = 100;
 const HOTSPOT_SHOW_DELAY = 100;
+const SCROLL_SETTLE_DELAY = 250;
 
 /* ================================================================
    RESPONSIVE
@@ -79,54 +77,6 @@ function useBreakpoint(): Breakpoint {
   }, []);
   return bp;
 }
-function lockScroll() {
-  if (typeof window !== "undefined") {
-    document.body.style.overflow = "hidden";
-  }
-}
-function unlockScroll() {
-  if (typeof window !== "undefined") {
-    document.body.style.overflow = "";
-  }
-}
-
-/* ================================================================
-   PRELOADER
-   ================================================================ */
-const Preloader: React.FC<{ progress: number; visible: boolean; label: string }> = ({
-  progress, visible, label,
-}) => {
-  const p = Math.min(100, Math.max(0, progress));
-  const c = 2 * Math.PI * 54;
-  return (
-    <div style={{
-      position: "fixed", inset: 0, zIndex: 9999,
-      display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
-      background: "#000", opacity: visible ? 1 : 0, pointerEvents: visible ? "all" : "none",
-      transition: "opacity 0.7s cubic-bezier(0.4,0,0.2,1)",
-    }}>
-      <div style={{ position: "relative", width: 140, height: 140 }}>
-        <svg width="140" height="140" style={{ position: "absolute", inset: 0, transform: "rotate(-90deg)" }}>
-          <circle cx="70" cy="70" r="54" fill="none" stroke="rgba(255,255,255,0.1)" strokeWidth="5" />
-          <circle cx="70" cy="70" r="54" fill="none" stroke="#dc2626" strokeWidth="5"
-            strokeLinecap="round" strokeDasharray={c} strokeDashoffset={c - (p / 100) * c}
-            style={{ transition: "stroke-dashoffset 0.3s ease-out" }} />
-        </svg>
-        <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column" }}>
-          <span style={{ fontFamily: "'DM Mono','Courier New',monospace", fontSize: 28, fontWeight: 700, color: "#fff", letterSpacing: "-1px", lineHeight: 1 }}>{Math.round(p)}</span>
-          <span style={{ fontFamily: "'DM Mono','Courier New',monospace", fontSize: 11, color: "#666", letterSpacing: "0.1em", marginTop: 2 }}>%</span>
-        </div>
-      </div>
-      <div style={{ marginTop: 28, textAlign: "center" }}>
-        <p style={{ fontFamily: "'DM Mono','Courier New',monospace", fontSize: 11, letterSpacing: "0.25em", color: "#dc2626", textTransform: "uppercase", marginBottom: 6 }}>sBike</p>
-        <p style={{ fontFamily: "'DM Mono','Courier New',monospace", fontSize: 11, letterSpacing: "0.12em", color: "#555", textTransform: "uppercase" }}>{label}</p>
-      </div>
-      <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, height: 3, background: "rgba(255,255,255,0.05)" }}>
-        <div style={{ height: "100%", width: `${p}%`, background: "linear-gradient(90deg,#dc2626,#ef4444)", transition: "width 0.3s ease-out", borderRadius: "0 2px 2px 0" }} />
-      </div>
-    </div>
-  );
-};
 
 /* ================================================================
    HOTSPOT CARD
@@ -206,17 +156,16 @@ const ScrollHint: React.FC<{ visible: boolean }> = ({ visible }) => (
 
 /* ================================================================
    MAIN COMPONENT
+   No internal preloader — SitePreloader in page.tsx handles it.
+   This component mounts already visible and starts loading immediately.
    ================================================================ */
 export default function ScrollFrames({ src }: { src?: string }) {
-  const [readyToShow, setReadyToShow] = useState(false);
-  const [showPreloader, setShowPreloader] = useState(true);
-  const [loadProgress, setLoadProgress] = useState(0);
-  const [preloaderLabel, setPreloaderLabel] = useState("Loading…");
   const [activeSection, setActiveSection] = useState<number | null>(null);
   const [introComplete, setIntroComplete] = useState(false);
   const [hotspotVisible, setHotspotVisible] = useState<Record<number, boolean>>({});
   const [currentDot, setCurrentDot] = useState(0);
   const [showButtons, setShowButtons] = useState(false);
+  const [canvasReady, setCanvasReady] = useState(false);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -234,6 +183,11 @@ export default function ScrollFrames({ src }: { src?: string }) {
   const proxyRef = useRef({ frame: 1 });
   const activeTweenRef = useRef<gsap.core.Tween | null>(null);
 
+  const tweenGenRef = useRef(0);
+  const scrollingToSectionRef = useRef<number | null>(null);
+  const settleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const loopingSectionRef = useRef<number | null>(null);
+
   const activeSectionRef = useRef<number | null>(null);
   const introCompleteRef = useRef(false);
   const readyRef = useRef(false);
@@ -241,7 +195,53 @@ export default function ScrollFrames({ src }: { src?: string }) {
   const hotspotTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingHotspotRef = useRef<Record<number, boolean>>({});
 
+  const bgQueueRef = useRef<number[]>([]);
+  const bgQueueIdxRef = useRef(0);
+  const bgActiveReqRef = useRef(0);
+  const bgLoadStartedRef = useRef(false);
+
+  const playSectionAnimationRef = useRef<(idx: number) => void>(() => { });
+
   const bp = useBreakpoint();
+
+  /* ================================================================
+     SET TARGET FRAME
+     ================================================================ */
+  const setTargetFrame = useCallback((frame: number) => {
+    targetFrameRef.current = frame;
+    if (progressRef.current) {
+      progressRef.current.style.transform = `scaleX(${Math.min(frame / FRAME_COUNT, 1)})`;
+    }
+    const f = Math.round(frame);
+    const newVis: Record<number, boolean> = {};
+    HOTSPOTS.forEach(spot => {
+      newVis[spot.id] = introCompleteRef.current
+        ? false
+        : f >= spot.showAtFrame.start && f <= spot.showAtFrame.end;
+    });
+    const currentVis = pendingHotspotRef.current;
+    let shouldHideNow = false, shouldShowDelay = false;
+    for (const id in newVis) {
+      const numId = Number(id);
+      if (!newVis[numId] && currentVis[numId]) shouldHideNow = true;
+      if (newVis[numId] && !currentVis[numId]) shouldShowDelay = true;
+    }
+    if (shouldHideNow) {
+      pendingHotspotRef.current = { ...newVis };
+      setHotspotVisible({ ...newVis });
+      if (hotspotTimerRef.current) { clearTimeout(hotspotTimerRef.current); hotspotTimerRef.current = null; }
+    } else if (shouldShowDelay) {
+      pendingHotspotRef.current = newVis;
+      if (hotspotTimerRef.current) clearTimeout(hotspotTimerRef.current);
+      hotspotTimerRef.current = setTimeout(() => {
+        setHotspotVisible({ ...pendingHotspotRef.current });
+        hotspotTimerRef.current = null;
+      }, HOTSPOT_SHOW_DELAY);
+    } else {
+      pendingHotspotRef.current = { ...newVis };
+      setHotspotVisible({ ...newVis });
+    }
+  }, []);
 
   /* ================================================================
      RAF RENDER LOOP
@@ -249,25 +249,15 @@ export default function ScrollFrames({ src }: { src?: string }) {
   const startRafLoop = useCallback(() => {
     const loop = () => {
       let target = Math.max(1, Math.min(FRAME_COUNT, Math.round(targetFrameRef.current)));
-
-      // If target frame isn't loaded yet, find the nearest loaded frame
-      // so the canvas never shows a blank gap
       if (!loadedRef.current[target - 1] || !imagesRef.current[target - 1]) {
-        let lo = target - 2;
-        let hi = target; // hi is already 0-indexed offset by 1
-        let found = false;
+        let lo = target - 2, hi = target, found = false;
         while (lo >= 0 || hi < FRAME_COUNT) {
           if (lo >= 0 && loadedRef.current[lo] && imagesRef.current[lo]) { target = lo + 1; found = true; break; }
           if (hi < FRAME_COUNT && loadedRef.current[hi] && imagesRef.current[hi]) { target = hi + 1; found = true; break; }
-          lo--;
-          hi++;
+          lo--; hi++;
         }
-        if (!found) {
-          rafRef.current = requestAnimationFrame(loop);
-          return;
-        }
+        if (!found) { rafRef.current = requestAnimationFrame(loop); return; }
       }
-
       if (target !== drawnFrameRef.current) {
         const canvas = canvasRef.current;
         const img = imagesRef.current[target - 1];
@@ -289,161 +279,128 @@ export default function ScrollFrames({ src }: { src?: string }) {
   }, []);
 
   /* ================================================================
-     SET TARGET FRAME
+     BACKGROUND LOADER
      ================================================================ */
+  const MAX_BG_CONCURRENT = 32;
 
-  const setTargetFrame = useCallback((frame: number) => {
-    targetFrameRef.current = frame;
-
-    if (progressRef.current) {
-      progressRef.current.style.transform = `scaleX(${Math.min(frame / FRAME_COUNT, 1)})`;
+  const loadNextBg = useCallback(() => {
+    const imgs = imagesRef.current, loaded = loadedRef.current;
+    while (bgActiveReqRef.current < MAX_BG_CONCURRENT && bgQueueIdxRef.current < bgQueueRef.current.length) {
+      const idx = bgQueueRef.current[bgQueueIdxRef.current++];
+      if (loaded[idx]) continue;
+      bgActiveReqRef.current++;
+      const img = new Image();
+      img.crossOrigin = "anonymous"; img.decoding = "async";
+      img.onload = img.onerror = () => {
+        loaded[idx] = true; imgs[idx] = img;
+        bgActiveReqRef.current--;
+        loadNextBg();
+      };
+      img.src = framePath(idx + 1); imgs[idx] = img;
     }
-
-    const f = Math.round(frame);
-
-    const newVis: Record<number, boolean> = {};
-    HOTSPOTS.forEach(spot => {
-      if (!introCompleteRef.current) {
-        newVis[spot.id] = f >= spot.showAtFrame.start && f <= spot.showAtFrame.end;
-      } else {
-        newVis[spot.id] = false;
-      }
-    });
-
-    const currentVis = pendingHotspotRef.current;
-    let shouldHideNow = false;
-    let shouldShowDelay = false;
-    for (const id in newVis) {
-      const numId = Number(id);
-      if (!newVis[numId] && currentVis[numId]) shouldHideNow = true;
-      if (newVis[numId] && !currentVis[numId]) shouldShowDelay = true;
-    }
-
-    if (shouldHideNow) {
-      pendingHotspotRef.current = { ...newVis };
-      setHotspotVisible({ ...newVis });
-      if (hotspotTimerRef.current) { clearTimeout(hotspotTimerRef.current); hotspotTimerRef.current = null; }
-    } else if (shouldShowDelay) {
-      pendingHotspotRef.current = newVis;
-      if (hotspotTimerRef.current) clearTimeout(hotspotTimerRef.current);
-      hotspotTimerRef.current = setTimeout(() => {
-        setHotspotVisible({ ...pendingHotspotRef.current });
-        hotspotTimerRef.current = null;
-      }, HOTSPOT_SHOW_DELAY);
-    } else {
-      pendingHotspotRef.current = { ...newVis };
-      setHotspotVisible({ ...newVis });
-    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  const reprioritizeBgQueue = useCallback((sectionIndex: number) => {
+    const section = SECTIONS[sectionIndex], loaded = loadedRef.current;
+    const priority: number[] = [];
+    for (let i = section.frameStart; i < section.frameEnd; i++) {
+      if (!loaded[i]) priority.push(i);
+    }
+    if (!priority.length) return;
+    const rest = bgQueueRef.current.slice(bgQueueIdxRef.current).filter(f => !priority.includes(f));
+    bgQueueRef.current = [...priority, ...rest];
+    bgQueueIdxRef.current = 0;
+    loadNextBg();
+  }, [loadNextBg]);
+
   /* ================================================================
-     SMART LOADING STRATEGY
+     LOADING — starts immediately on mount, no gating needed
      ================================================================ */
   useEffect(() => {
-    const imgs = imagesRef.current;
-    const loaded = loadedRef.current;
+    const imgs = imagesRef.current, loaded = loadedRef.current;
     let phase1Done = 0;
+
+    const startBgLoad = () => {
+      if (bgLoadStartedRef.current) return;
+      bgLoadStartedRef.current = true;
+      const allFramesToLoad = new Set<number>();
+      for (let i = READY_THRESHOLD; i < 200; i += 2) allFramesToLoad.add(i);
+      for (let i = 210; i < 433; i += 2) allFramesToLoad.add(i);
+      for (let i = 500; i < 666; i += 2) allFramesToLoad.add(i);
+      for (let i = 795; i < 900; i += 2) allFramesToLoad.add(i);
+      
+      const q: number[] = [];
+      const added = new Set<number>();
+
+      const addPattern = (step: number) => {
+        for (let i = READY_THRESHOLD; i < FRAME_COUNT; i += step) {
+          if (allFramesToLoad.has(i) && !added.has(i)) {
+            q.push(i);
+            added.add(i);
+          }
+        }
+      };
+
+      addPattern(24);
+      addPattern(12);
+      addPattern(6);
+      
+      for (let i = READY_THRESHOLD; i < FRAME_COUNT; i++) {
+        if (allFramesToLoad.has(i) && !added.has(i)) {
+          q.push(i);
+          added.add(i);
+        }
+      }
+
+      bgQueueRef.current = q; bgQueueIdxRef.current = 0;
+      loadNextBg();
+    };
 
     const onLoad = (i: number) => {
       loaded[i] = true;
       if (i < READY_THRESHOLD) {
         phase1Done++;
-        setLoadProgress(Math.round((phase1Done / READY_THRESHOLD) * 100));
         if (phase1Done === READY_THRESHOLD && !readyRef.current) {
           readyRef.current = true;
-          setPreloaderLabel("Ready!");
-          setLoadProgress(100);
-          setTimeout(() => { setShowPreloader(false); setReadyToShow(true); bgLoad(); }, 400);
+
+          const canvas = canvasRef.current, img0 = imagesRef.current[0];
+          if (canvas && img0) {
+            canvas.width = img0.naturalWidth; canvas.height = img0.naturalHeight;
+            canvas.getContext("2d")?.drawImage(img0, 0, 0);
+            drawnFrameRef.current = 1;
+          }
+
+          requestAnimationFrame(() => {
+            setCanvasReady(true);
+            startBgLoad();
+          });
         }
       }
     };
 
-    // Controlled Concurrency Loading
-    let activeRequests = 0;
-    let nextImageIndex = 0;
-    const MAX_CONCURRENT = 150; // Maxed out to speed up 900 frame download
-
     const loadNext = () => {
-      while (activeRequests < MAX_CONCURRENT && nextImageIndex < READY_THRESHOLD) {
-        const i = nextImageIndex++;
-
-        // Render every frame before 200, and every 2nd frame after 200
-        if (i >= 200 && i % 2 !== 0) {
+      for (let i = 0; i < READY_THRESHOLD; i++) {
+        if (i % 2 !== 0) {
           onLoad(i);
           continue;
         }
-
-        activeRequests++;
         const img = new Image();
-        img.crossOrigin = "anonymous";
-        img.decoding = "async";
-
-        const handleComplete = () => {
-          activeRequests--;
-          onLoad(i);
-          loadNext();
-        };
-
-        img.onload = handleComplete;
-        img.onerror = handleComplete;
+        img.crossOrigin = "anonymous"; img.decoding = "async";
+        img.onload = img.onerror = () => { onLoad(i); };
         img.src = framePath(i + 1);
         imgs[i] = img;
       }
     };
-
     loadNext();
-
-    const bgLoad = () => {
-      const loadQueue: number[] = [];
-
-      // 1. Intro remaining frames
-      for (let i = READY_THRESHOLD; i < 200; i++) loadQueue.push(i);
-
-      // 2. The 3 Sections (prioritized!)
-      for (let i = 210; i < 433; i++) loadQueue.push(i);
-      for (let i = 500; i < 666; i++) loadQueue.push(i);
-      for (let i = 795; i < 900; i++) loadQueue.push(i);
-
-      // 3. The gaps between sections
-      for (let i = 200; i < 210; i++) loadQueue.push(i);
-      for (let i = 433; i < 500; i++) loadQueue.push(i);
-      for (let i = 666; i < 795; i++) loadQueue.push(i);
-
-      let qIdx = 0;
-      let bgActiveRequests = 0;
-      const MAX_BG_CONCURRENT = 10;
-
-      const loadNextBatch = () => {
-        while (bgActiveRequests < MAX_BG_CONCURRENT && qIdx < loadQueue.length) {
-          const idx = loadQueue[qIdx++];
-          if (loaded[idx]) continue;
-          bgActiveRequests++;
-          const img = new Image();
-          img.crossOrigin = "anonymous";
-          img.decoding = "async";
-          const handleComplete = () => {
-            loaded[idx] = true;
-            bgActiveRequests--;
-            loadNextBatch();
-          };
-          img.onload = handleComplete;
-          img.onerror = handleComplete;
-          img.src = framePath(idx + 1);
-          imgs[idx] = img;
-        }
-      };
-
-      loadNextBatch();
-    };
-
-    // No premature bgTimer! bgLoad is now triggered securely after phase1 completes.
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loadNextBg]);
 
   /* ================================================================
-     START RAF LOOP + GSAP SCROLL
+     GSAP SCROLL SETUP — starts as soon as phase 1 frames are ready
      ================================================================ */
   useEffect(() => {
-    if (!readyToShow || !containerRef.current) return;
+    if (!canvasReady || !containerRef.current) return;
 
     startRafLoop();
     setTargetFrame(1);
@@ -451,19 +408,52 @@ export default function ScrollFrames({ src }: { src?: string }) {
     const stProxy = stProxyRef.current;
 
     const playSectionAnimation = (sectionIndex: number) => {
-      if (activeTweenRef.current) activeTweenRef.current.kill();
+      if (activeTweenRef.current) {
+        activeTweenRef.current.kill();
+        activeTweenRef.current = null;
+      }
+
+      tweenGenRef.current += 1;
+      const myGeneration = tweenGenRef.current;
+      loopingSectionRef.current = sectionIndex;
+
       const section = SECTIONS[sectionIndex];
+      const total = section.frameEnd - section.frameStart;
+      let ready = 0;
+      for (let i = section.frameStart; i < section.frameEnd; i++) {
+        if (loadedRef.current[i]) ready++;
+      }
+      const ratio = ready / total;
+      const baseDur = total / 17;
+      const duration = ratio >= 0.8 ? baseDur : baseDur * (1 + (1 - ratio) * 3);
+
       proxyRef.current.frame = section.frameStart;
       setTargetFrame(section.frameStart);
 
-      const fastDuration = (section.frameEnd - section.frameStart) / 17;
-      activeTweenRef.current = gsap.to(proxyRef.current, {
-        frame: section.frameEnd,
-        duration: fastDuration,
-        ease: "none",
-        onUpdate: () => setTargetFrame(proxyRef.current.frame),
-      });
+      const runTween = () => {
+        if (tweenGenRef.current !== myGeneration) return;
+        proxyRef.current.frame = section.frameStart;
+
+        activeTweenRef.current = gsap.to(proxyRef.current, {
+          frame: section.frameEnd,
+          duration,
+          ease: "none",
+          onUpdate() {
+            if (tweenGenRef.current !== myGeneration) return;
+            setTargetFrame(proxyRef.current.frame);
+          },
+          onComplete() {
+            if (tweenGenRef.current !== myGeneration) return;
+            activeTweenRef.current = null;
+            if (loopingSectionRef.current === sectionIndex) runTween();
+          },
+        });
+      };
+
+      runTween();
     };
+
+    playSectionAnimationRef.current = playSectionAnimation;
 
     const handleScrubUpdate = () => {
       const tl = tlRef.current;
@@ -472,11 +462,9 @@ export default function ScrollFrames({ src }: { src?: string }) {
       const currentTime = tl.time();
       const introTime = tl.labels["intro_end"] || 9.0;
 
-      // Intro part scrubbing
       if (currentTime < introTime) {
         const nf = Math.round(stProxy.frame);
 
-        // Dot indicator
         const dotF = [...PAUSE_POINTS.map(p => p.at), INTRO_END_FRAME];
         let nearest = 0, minD = Infinity;
         dotF.forEach((f, i) => { const d = Math.abs(nf - f); if (d < minD) { minD = d; nearest = i; } });
@@ -489,16 +477,15 @@ export default function ScrollFrames({ src }: { src?: string }) {
 
         if (activeSectionRef.current !== null) {
           activeSectionRef.current = null;
+          loopingSectionRef.current = null;
           setActiveSection(null);
-          if (activeTweenRef.current) {
-            activeTweenRef.current.kill();
-            activeTweenRef.current = null;
-          }
+          if (activeTweenRef.current) { activeTweenRef.current.kill(); activeTweenRef.current = null; }
+          tweenGenRef.current += 1;
         }
 
         setTargetFrame(nf);
+
       } else {
-        // Sections part scrolling (frames animated by gsap.to, not scrubbed)
         introCompleteRef.current = true;
         setIntroComplete(true);
         setShowButtons(true);
@@ -506,7 +493,14 @@ export default function ScrollFrames({ src }: { src?: string }) {
         let newActiveSection = 0;
         if (currentTime >= tl.labels["section_2_start"]) newActiveSection = 2;
         else if (currentTime >= tl.labels["section_1_start"]) newActiveSection = 1;
-        else newActiveSection = 0;
+
+        if (scrollingToSectionRef.current !== null) {
+          if (activeSectionRef.current !== newActiveSection) {
+            activeSectionRef.current = newActiveSection;
+            setActiveSection(newActiveSection);
+          }
+          return;
+        }
 
         if (activeSectionRef.current !== newActiveSection) {
           activeSectionRef.current = newActiveSection;
@@ -540,13 +534,12 @@ export default function ScrollFrames({ src }: { src?: string }) {
         t += PLAY + PAUSE;
       });
       tl.to(stProxy, { frame: INTRO_END_FRAME, duration: PLAY, ease: "none" }, t);
-      tl.addLabel(`intro_end`, t + PLAY);
+      tl.addLabel("intro_end", t + PLAY);
       t += PLAY;
 
       const SECTION_DUR = 1.2;
-      SECTIONS.forEach((sec, idx) => {
+      SECTIONS.forEach((_, idx) => {
         tl.addLabel(`section_${idx}_start`, t);
-        // Dummy tween to create timeline duration for scrubbing sections
         tl.to({ dummy: 0 }, { dummy: 1, duration: SECTION_DUR, ease: "none" }, t);
         tl.addLabel(`section_${idx}_end`, t + SECTION_DUR);
         t += SECTION_DUR;
@@ -558,8 +551,10 @@ export default function ScrollFrames({ src }: { src?: string }) {
       gsapCtx.revert();
       if (activeTweenRef.current) activeTweenRef.current.kill();
       if (hotspotTimerRef.current) clearTimeout(hotspotTimerRef.current);
+      if (settleTimerRef.current) clearTimeout(settleTimerRef.current);
+      loopingSectionRef.current = null;
     };
-  }, [readyToShow, setTargetFrame, startRafLoop]);
+  }, [canvasReady, setTargetFrame, startRafLoop]);
 
   /* ================================================================
      DOT CLICK
@@ -567,27 +562,17 @@ export default function ScrollFrames({ src }: { src?: string }) {
   const handleDotClick = useCallback((dotIndex: number) => {
     const st = ScrollTrigger.getAll().find(t => t.vars.id === "scroll-frames-trigger");
     if (!st || !tlRef.current) return;
-
     const dotF = [...PAUSE_POINTS.map(p => p.at), INTRO_END_FRAME];
     const f = dotF[dotIndex];
-
-    let time = 0;
-    if (f === INTRO_END_FRAME) {
-      time = tlRef.current.labels['intro_end'];
-    } else {
-      time = tlRef.current.labels[`pause_${f}`];
-    }
-
+    const time = f === INTRO_END_FRAME
+      ? tlRef.current.labels["intro_end"]
+      : tlRef.current.labels[`pause_${f}`];
     const progress = time / tlRef.current.duration();
     const s = st.start as number, e = st.end as number;
-    const targetY = s + progress * (e - s) + 10;
-
     gsap.to(window, {
-      scrollTo: { y: targetY, autoKill: false },
-      duration: 1.0,
-      ease: "power2.inOut",
+      scrollTo: { y: s + progress * (e - s) + 10, autoKill: false },
+      duration: 1.0, ease: "power2.inOut",
     });
-
     setHotspotVisible({});
     pendingHotspotRef.current = {};
   }, []);
@@ -599,112 +584,125 @@ export default function ScrollFrames({ src }: { src?: string }) {
     const st = ScrollTrigger.getAll().find(t => t.vars.id === "scroll-frames-trigger");
     if (!st || !tlRef.current) return;
 
-    const label = `section_${sectionIndex}_start`;
-    const time = tlRef.current.labels[label];
-    const progress = time / tlRef.current.duration();
+    reprioritizeBgQueue(sectionIndex);
 
+    if (settleTimerRef.current) { clearTimeout(settleTimerRef.current); settleTimerRef.current = null; }
+
+    scrollingToSectionRef.current = sectionIndex;
+    activeSectionRef.current = sectionIndex;
+    setActiveSection(sectionIndex);
+    playSectionAnimationRef.current(sectionIndex);
+
+    const time = tlRef.current.labels[`section_${sectionIndex}_start`];
+    const progress = time / tlRef.current.duration();
     const s = st.start as number, e = st.end as number;
-    const targetY = s + progress * (e - s) + 10;
 
     gsap.to(window, {
-      scrollTo: { y: targetY, autoKill: false },
+      scrollTo: { y: s + progress * (e - s) + 10, autoKill: false },
       duration: 1.0,
       ease: "power2.inOut",
+      onComplete: () => {
+        settleTimerRef.current = setTimeout(() => {
+          scrollingToSectionRef.current = null;
+          settleTimerRef.current = null;
+        }, SCROLL_SETTLE_DELAY);
+      },
     });
 
     setHotspotVisible({});
     pendingHotspotRef.current = {};
-  }, []);
+  }, [reprioritizeBgQueue]);
 
-  const showScrollHint = !introComplete && readyToShow && !showPreloader;
+  const showScrollHint = !introComplete && canvasReady;
 
   /* ================================================================
      RENDER
      ================================================================ */
   return (
-    <>
-      <Preloader progress={loadProgress} visible={showPreloader} label={preloaderLabel} />
+    <div
+      ref={containerRef}
+      style={{ width: "100%", height: "100vh", background: "#111", overflow: "hidden", position: "relative" }}
+    >
+      <canvas ref={canvasRef} style={{
+        position: "absolute", inset: 0, width: "100%", height: "100%",
+        objectFit: "cover",
+        opacity: canvasReady ? 1 : 0,
+        transition: "opacity 0.4s ease",
+      }} />
 
-      <div ref={containerRef} style={{ width: "100%", height: "100vh", background: "#000", overflow: "hidden", position: "relative" }}>
+      {HOTSPOTS.map(spot => (
+        <HotspotCard key={spot.id} spot={spot} visible={hotspotVisible[spot.id] ?? false} bp={bp} />
+      ))}
 
-        <canvas ref={canvasRef} style={{
-          position: "absolute", inset: 0, width: "100%", height: "100%",
-          objectFit: "cover", opacity: readyToShow ? 1 : 0, transition: "opacity 0.5s ease",
-        }} />
-
-        {HOTSPOTS.map(spot => (
-          <HotspotCard key={spot.id} spot={spot} visible={hotspotVisible[spot.id] ?? false} bp={bp} />
-        ))}
-
-        {/* Section Buttons */}
+      {/* Section Buttons */}
+      <div style={{
+        position: "absolute", top: 80, left: 0, right: 0, zIndex: 60,
+        display: "flex", justifyContent: "center", pointerEvents: "none",
+        opacity: showButtons ? 1 : 0,
+        transform: showButtons ? "translateY(0)" : "translateY(-20px)",
+        transition: "opacity 0.5s cubic-bezier(0.4,0,0.2,1), transform 0.5s cubic-bezier(0.34,1.56,0.64,1)",
+      }}>
         <div style={{
-          position: "absolute", top: 80, left: 0, right: 0, zIndex: 60,
-          display: "flex", justifyContent: "center", pointerEvents: "none",
-          opacity: showButtons ? 1 : 0,
-          transform: showButtons ? "translateY(0)" : "translateY(-20px)",
-          transition: "opacity 0.5s cubic-bezier(0.4,0,0.2,1), transform 0.5s cubic-bezier(0.34,1.56,0.64,1)",
-        }}>
-          <div style={{
-            background: "rgba(255,255,255,0.95)", backdropFilter: "blur(12px)",
-            borderRadius: 999, padding: "4px", display: "inline-flex", gap: 2,
-            boxShadow: "0 4px 24px rgba(0,0,0,0.15)",
-            pointerEvents: showButtons ? "auto" : "none",
-          }}>
-            {SECTIONS.map((section, idx) => (
-              <button key={section.id} onClick={() => handleSectionClick(idx)} style={{
-                padding: bp === "sm" ? "6px 16px" : "8px 22px", borderRadius: 999,
-                fontFamily: "'DM Mono','Courier New',monospace",
-                fontSize: bp === "sm" ? 12 : 14, fontWeight: 500, letterSpacing: "0.03em",
-                border: "none", cursor: "pointer", whiteSpace: "nowrap",
-                transition: "background 0.3s ease, color 0.3s ease, box-shadow 0.3s ease",
-                background: activeSection === idx ? "#dc2626" : "transparent",
-                color: activeSection === idx ? "#fff" : "#333",
-                boxShadow: activeSection === idx ? "0 2px 10px rgba(220,38,38,0.35)" : "none",
-              }}>{section.name}</button>
-            ))}
-          </div>
-        </div>
-
-        {/* Dot Nav — intro */}
-        <div style={{
-          position: "absolute", right: bp === "sm" ? 12 : 16, top: "50%",
-          transform: "translateY(-50%)", zIndex: 50,
-          display: "flex", flexDirection: "column", gap: bp === "sm" ? 8 : 12,
-          opacity: showScrollHint ? 1 : 0, transition: "opacity 0.5s ease",
-          pointerEvents: showScrollHint ? "auto" : "none",
-        }}>
-          {Array.from({ length: TOTAL_DOT_STOPS }).map((_, idx) => (
-            <button key={idx} onClick={() => handleDotClick(idx)} style={{
-              width: currentDot === idx ? 12 : 10, height: currentDot === idx ? 12 : 10,
-              borderRadius: "50%", border: "none", cursor: "pointer", padding: 0,
-              transition: "all 0.3s ease",
-              background: currentDot === idx ? "#dc2626" : "rgba(255,255,255,0.5)",
-              boxShadow: currentDot === idx ? "0 0 0 3px rgba(220,38,38,0.25), 0 2px 8px rgba(220,38,38,0.4)" : "none",
-            }} aria-label={`Go to stop ${idx + 1}`} />
-          ))}
-        </div>
-
-        {/* Dot Nav — sections */}
-        <div style={{
-          position: "absolute", right: bp === "sm" ? 12 : 16, top: "50%",
-          transform: "translateY(-50%)", zIndex: 50,
-          display: "flex", flexDirection: "column", gap: bp === "sm" ? 8 : 12,
-          opacity: showButtons ? 1 : 0, transition: "opacity 0.5s ease",
+          background: "rgba(255,255,255,0.95)", backdropFilter: "blur(12px)",
+          borderRadius: 999, padding: "4px", display: "inline-flex", gap: 2,
+          boxShadow: "0 4px 24px rgba(0,0,0,0.15)",
           pointerEvents: showButtons ? "auto" : "none",
         }}>
           {SECTIONS.map((section, idx) => (
             <button key={section.id} onClick={() => handleSectionClick(idx)} style={{
-              width: activeSection === idx ? 12 : 10, height: activeSection === idx ? 12 : 10,
-              borderRadius: "50%", border: "none", cursor: "pointer", padding: 0,
-              transition: "all 0.3s ease",
-              background: activeSection === idx ? "#dc2626" : "rgba(255,255,255,0.5)",
-              boxShadow: activeSection === idx ? "0 0 0 3px rgba(220,38,38,0.25), 0 2px 8px rgba(220,38,38,0.4)" : "none",
-            }} aria-label={`Play section: ${section.name}`} />
+              padding: bp === "sm" ? "6px 16px" : "8px 22px", borderRadius: 999,
+              fontFamily: "'DM Mono','Courier New',monospace",
+              fontSize: bp === "sm" ? 12 : 14, fontWeight: 500, letterSpacing: "0.03em",
+              border: "none", cursor: "pointer", whiteSpace: "nowrap",
+              transition: "background 0.3s ease, color 0.3s ease, box-shadow 0.3s ease",
+              background: activeSection === idx ? "#dc2626" : "transparent",
+              color: activeSection === idx ? "#fff" : "#333",
+              boxShadow: activeSection === idx ? "0 2px 10px rgba(220,38,38,0.35)" : "none",
+            }}>{section.name}</button>
           ))}
         </div>
-
-
       </div>
-    </>
+
+      {/* Dot Nav — intro */}
+      <div style={{
+        position: "absolute", right: bp === "sm" ? 12 : 16, top: "50%",
+        transform: "translateY(-50%)", zIndex: 50,
+        display: "flex", flexDirection: "column", gap: bp === "sm" ? 8 : 12,
+        opacity: showScrollHint ? 1 : 0, transition: "opacity 0.5s ease",
+        pointerEvents: showScrollHint ? "auto" : "none",
+      }}>
+        {Array.from({ length: TOTAL_DOT_STOPS }).map((_, idx) => (
+          <button key={idx} onClick={() => handleDotClick(idx)} style={{
+            width: currentDot === idx ? 12 : 10,
+            height: currentDot === idx ? 12 : 10,
+            borderRadius: "50%", border: "none", cursor: "pointer", padding: 0,
+            transition: "all 0.3s ease",
+            background: currentDot === idx ? "#dc2626" : "rgba(255,255,255,0.5)",
+            boxShadow: currentDot === idx ? "0 0 0 3px rgba(220,38,38,0.25), 0 2px 8px rgba(220,38,38,0.4)" : "none",
+          }} aria-label={`Go to stop ${idx + 1}`} />
+        ))}
+      </div>
+
+      {/* Dot Nav — sections */}
+      <div style={{
+        position: "absolute", right: bp === "sm" ? 12 : 16, top: "50%",
+        transform: "translateY(-50%)", zIndex: 50,
+        display: "flex", flexDirection: "column", gap: bp === "sm" ? 8 : 12,
+        opacity: showButtons ? 1 : 0, transition: "opacity 0.5s ease",
+        pointerEvents: showButtons ? "auto" : "none",
+      }}>
+        {SECTIONS.map((section, idx) => (
+          <button key={section.id} onClick={() => handleSectionClick(idx)} style={{
+            width: activeSection === idx ? 12 : 10,
+            height: activeSection === idx ? 12 : 10,
+            borderRadius: "50%", border: "none", cursor: "pointer", padding: 0,
+            transition: "all 0.3s ease",
+            background: activeSection === idx ? "#dc2626" : "rgba(255,255,255,0.5)",
+            boxShadow: activeSection === idx ? "0 0 0 3px rgba(220,38,38,0.25), 0 2px 8px rgba(220,38,38,0.4)" : "none",
+          }} aria-label={`Play section: ${section.name}`} />
+        ))}
+      </div>
+
+    </div>
   );
 }
