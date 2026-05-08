@@ -304,7 +304,7 @@ export default function ScrollFrames({ src }: { src?: string }) {
   const reprioritizeBgQueue = useCallback((sectionIndex: number) => {
     const section = SECTIONS[sectionIndex], loaded = loadedRef.current;
     const priority: number[] = [];
-    for (let i = section.frameStart; i < section.frameEnd; i++) {
+    for (let i = section.frameStart; i < section.frameEnd; i += 2) {
       if (!loaded[i]) priority.push(i);
     }
     if (!priority.length) return;
@@ -329,7 +329,7 @@ export default function ScrollFrames({ src }: { src?: string }) {
       for (let i = 210; i < 433; i += 2) allFramesToLoad.add(i);
       for (let i = 500; i < 666; i += 2) allFramesToLoad.add(i);
       for (let i = 795; i < 900; i += 2) allFramesToLoad.add(i);
-      
+
       const q: number[] = [];
       const added = new Set<number>();
 
@@ -345,7 +345,7 @@ export default function ScrollFrames({ src }: { src?: string }) {
       addPattern(24);
       addPattern(12);
       addPattern(6);
-      
+
       for (let i = READY_THRESHOLD; i < FRAME_COUNT; i++) {
         if (allFramesToLoad.has(i) && !added.has(i)) {
           q.push(i);
@@ -419,11 +419,13 @@ export default function ScrollFrames({ src }: { src?: string }) {
 
       const section = SECTIONS[sectionIndex];
       const total = section.frameEnd - section.frameStart;
+      let expected = 0;
       let ready = 0;
-      for (let i = section.frameStart; i < section.frameEnd; i++) {
+      for (let i = section.frameStart; i < section.frameEnd; i += 2) {
+        expected++;
         if (loadedRef.current[i]) ready++;
       }
-      const ratio = ready / total;
+      const ratio = expected > 0 ? ready / expected : 1;
       const baseDur = total / 17;
       const duration = ratio >= 0.8 ? baseDur : baseDur * (1 + (1 - ratio) * 3);
 
