@@ -304,7 +304,7 @@ export default function ScrollFrames({ src }: { src?: string }) {
   const reprioritizeBgQueue = useCallback((sectionIndex: number) => {
     const section = SECTIONS[sectionIndex], loaded = loadedRef.current;
     const priority: number[] = [];
-    for (let i = section.frameStart; i < section.frameEnd; i += 2) {
+    for (let i = section.frameStart; i < section.frameEnd; i++) {
       if (!loaded[i]) priority.push(i);
     }
     if (!priority.length) return;
@@ -325,10 +325,17 @@ export default function ScrollFrames({ src }: { src?: string }) {
       if (bgLoadStartedRef.current) return;
       bgLoadStartedRef.current = true;
       const allFramesToLoad = new Set<number>();
+      
+      // Intro and intermediate scrolling sections (load every 2nd frame)
       for (let i = READY_THRESHOLD; i < 200; i += 2) allFramesToLoad.add(i);
-      for (let i = 210; i < 433; i += 2) allFramesToLoad.add(i);
-      for (let i = 500; i < 666; i += 2) allFramesToLoad.add(i);
-      for (let i = 795; i < 900; i += 2) allFramesToLoad.add(i);
+      for (let i = 200; i < 210; i += 2) allFramesToLoad.add(i);
+      for (let i = 433; i < 500; i += 2) allFramesToLoad.add(i);
+      for (let i = 666; i < 795; i += 2) allFramesToLoad.add(i);
+      
+      // Looping sections (load EVERY frame to prevent lag)
+      for (let i = 210; i < 433; i++) allFramesToLoad.add(i);
+      for (let i = 500; i < 666; i++) allFramesToLoad.add(i);
+      for (let i = 795; i < 900; i++) allFramesToLoad.add(i);
 
       const q: number[] = [];
       const added = new Set<number>();
@@ -419,13 +426,11 @@ export default function ScrollFrames({ src }: { src?: string }) {
 
       const section = SECTIONS[sectionIndex];
       const total = section.frameEnd - section.frameStart;
-      let expected = 0;
       let ready = 0;
-      for (let i = section.frameStart; i < section.frameEnd; i += 2) {
-        expected++;
+      for (let i = section.frameStart; i < section.frameEnd; i++) {
         if (loadedRef.current[i]) ready++;
       }
-      const ratio = expected > 0 ? ready / expected : 1;
+      const ratio = ready / total;
       const baseDur = total / 17;
       const duration = ratio >= 0.8 ? baseDur : baseDur * (1 + (1 - ratio) * 3);
 
