@@ -124,9 +124,9 @@ const HotspotCard: React.FC<{
       </svg>
       <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
         <img src={spot.src} alt={spot.title} style={{ width: 40, height: 40, objectFit: "contain", borderRadius: 8, flexShrink: 0 }} draggable={false} />
-        <h3 style={{ margin: 0, fontSize: bp === "sm" ? 11 : 12, fontWeight: 700, fontFamily: "'DM Mono','Courier New',monospace", color: "#111", lineHeight: 1.3 }}>{spot.title}</h3>
+        <h3 style={{ margin: 0, fontSize: bp === "sm" ? 11 : 12, fontWeight: 500, fontFamily: "var(--font-soehne), sans-serif", color: "#111", lineHeight: 1.3 }}>{spot.title}</h3>
       </div>
-      <p style={{ margin: 0, fontSize: bp === "sm" ? 9 : 10, fontFamily: "'DM Mono','Courier New',monospace", color: "#555", lineHeight: 1.6, fontWeight: 600 }}>{spot.desc}</p>
+      <p style={{ margin: 0, fontSize: bp === "sm" ? 9 : 10, fontFamily: "var(--font-soehne), sans-serif", color: "#555", lineHeight: 1.6, fontWeight: 400 }}>{spot.desc}</p>
     </div>
   );
 });
@@ -144,7 +144,7 @@ const ScrollHint: React.FC<{ visible: boolean }> = ({ visible }) => (
   }}>
     <style>{`@keyframes scrollBounce{0%,100%{transform:translateY(0);opacity:.9}50%{transform:translateY(8px);opacity:.4}}`}</style>
     <div style={{ animation: "scrollBounce 2s ease-in-out infinite" }}>
-      <span style={{ display: "block", fontFamily: "'DM Mono','Courier New',monospace", fontSize: 11, letterSpacing: "0.2em", color: "#fff", textTransform: "uppercase", textAlign: "center", marginBottom: 8 }}>Scroll to explore</span>
+      <span style={{ display: "block", fontFamily: "var(--font-soehne), sans-serif", fontSize: 11, letterSpacing: "0.2em", color: "#fff", textTransform: "uppercase", textAlign: "center", marginBottom: 8 }}>Scroll to explore</span>
       <svg width="18" height="26" viewBox="0 0 18 26" fill="none" style={{ display: "block", margin: "0 auto" }}>
         <rect x="5.5" y="0.5" width="7" height="15" rx="3.5" stroke="white" strokeOpacity="0.6" />
         <rect x="8" y="3" width="2" height="5" rx="1" fill="white" fillOpacity="0.8" />
@@ -658,7 +658,7 @@ export default function ScrollFrames({ src }: { src?: string }) {
           {SECTIONS.map((section, idx) => (
             <button key={section.id} onClick={() => handleSectionClick(idx)} style={{
               padding: bp === "sm" ? "6px 16px" : "8px 22px", borderRadius: 999,
-              fontFamily: "'DM Mono','Courier New',monospace",
+              fontFamily: "var(--font-soehne), sans-serif",
               fontSize: bp === "sm" ? 12 : 14, fontWeight: 500, letterSpacing: "0.03em",
               border: "none", cursor: "pointer", whiteSpace: "nowrap",
               transition: "background 0.3s ease, color 0.3s ease, box-shadow 0.3s ease",

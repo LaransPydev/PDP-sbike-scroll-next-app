@@ -1,11 +1,39 @@
 // app/layout.tsx
 import type { Metadata } from "next";
 import { Outfit } from "next/font/google";
+import localFont from "next/font/local";
 import "./globals.css";
 
 const outfit = Outfit({
   subsets: ["latin"],
   variable: "--font-outfit",
+  display: "swap",
+});
+
+const soehne = localFont({
+  src: [
+    {
+      path: "../public/fonts/sohne-buch.woff2",
+      weight: "400",
+      style: "normal",
+    },
+    {
+      path: "../public/fonts/sohne-kraftig.woff2",
+      weight: "500",
+      style: "normal",
+    },
+    {
+      path: "../public/fonts/sohne-halbfett.woff2",
+      weight: "600",
+      style: "normal",
+    },
+    {
+      path: "../public/fonts/sohne-fett.woff2",
+      weight: "700",
+      style: "normal",
+    },
+  ],
+  variable: "--font-soehne",
   display: "swap",
 });
 
@@ -34,7 +62,7 @@ export default function RootLayout({
           />
         ))}
       </head>
-      <body className={outfit.variable}>
+      <body className={`${outfit.variable} ${soehne.variable}`}>
         {children}
       </body>
     </html>
