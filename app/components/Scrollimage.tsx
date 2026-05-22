@@ -16,19 +16,19 @@ if (typeof window !== "undefined") {
 }
 
 /* ================================================================
-   CONFIG
+   CONFIG — DESKTOP
    ================================================================ */
-const FRAME_COUNT = 900;
-const CDN_BASE_URL = "https://do55ukdqgl59f.cloudfront.net";
-const framePath = (i: number) => `${CDN_BASE_URL}/frames/${i}.webp`;
+const DESKTOP_FRAME_COUNT = 900;
+const DESKTOP_CDN_BASE_URL = "https://do55ukdqgl59f.cloudfront.net";
+const desktopFramePath = (i: number) => `${DESKTOP_CDN_BASE_URL}/frames/${i}.webp`;
 
-const SECTIONS = [
+const DESKTOP_SECTIONS = [
   { id: 1, name: "Workout", frameStart: 210, frameEnd: 433 },
   { id: 2, name: "Landscape", frameStart: 500, frameEnd: 666 },
   { id: 3, name: "Gaming", frameStart: 795, frameEnd: 900 },
 ];
 
-const HOTSPOTS = [
+const DESKTOP_HOTSPOTS = [
   {
     id: 1,
     showDuringSection: 1,
@@ -51,13 +51,57 @@ const HOTSPOTS = [
   },
 ];
 
-const SCROLL_DISTANCE = 6000;
-const PAUSE_POINTS: { at: number; holdPx: number }[] = [
+const DESKTOP_PAUSE_POINTS: { at: number; holdPx: number }[] = [
   { at: 50, holdPx: 300 },
   { at: 130, holdPx: 200 },
 ];
-const INTRO_END_FRAME = 200;
-const TOTAL_DOT_STOPS = PAUSE_POINTS.length + 1;
+const DESKTOP_INTRO_END_FRAME = 200;
+
+/* ================================================================
+   CONFIG — MOBILE
+   ================================================================ */
+const MOBILE_FRAME_COUNT = 900;
+const mobileFramePath = (i: number) => `/mobile-frames/${i}.webp`;
+
+const MOBILE_SECTIONS = [
+  { id: 1, name: "Workout", frameStart: 210, frameEnd: 433 },
+  { id: 2, name: "Landscape", frameStart: 500, frameEnd: 666 },
+  { id: 3, name: "Gaming", frameStart: 795, frameEnd: 900 },
+];
+
+const MOBILE_HOTSPOTS = [
+  {
+    id: 1,
+    showDuringSection: 1,
+    title: "Dynamic LED Light",
+    desc: "color changing LED respond to your speed that enhances focus and energy",
+    src: "https://do55ukdqgl59f.cloudfront.net/incandescent-light-bulb-svgrepo-com%201.svg",
+    cardStyle: { bottom: "15%", right: "5%" } as React.CSSProperties,
+    lineFrom: "left" as const,
+    showAtFrame: { start: 45, end: 57 },
+  },
+  {
+    id: 2,
+    showDuringSection: 2,
+    title: "21.5 Display",
+    desc: "With the 360-degree swiveling touch display,your workouts are more flexible than ever!",
+    src: "https://do55ukdqgl59f.cloudfront.net/incandescent-light-bulb-svgrepo-com%201.svg",
+    cardStyle: { top: "20%", left: "5%" } as React.CSSProperties,
+    lineFrom: "right" as const,
+    showAtFrame: { start: 110, end: 150 },
+  },
+];
+
+const MOBILE_PAUSE_POINTS: { at: number; holdPx: number }[] = [
+  { at: 50, holdPx: 300 },
+  { at: 130, holdPx: 200 },
+];
+const MOBILE_INTRO_END_FRAME = 200;
+
+/* ================================================================
+   SHARED CONSTANTS
+   ================================================================ */
+const SCROLL_DISTANCE = 6000;
 const READY_THRESHOLD = 100;
 const HOTSPOT_SHOW_DELAY = 100;
 const SCROLL_SETTLE_DELAY = 250;
@@ -81,8 +125,10 @@ function useBreakpoint(): Breakpoint {
 /* ================================================================
    HOTSPOT CARD
    ================================================================ */
+type HotspotType = typeof DESKTOP_HOTSPOTS[number];
+
 const HotspotCard: React.FC<{
-  spot: typeof HOTSPOTS[number]; visible: boolean; bp: Breakpoint;
+  spot: HotspotType; visible: boolean; bp: Breakpoint;
 }> = React.memo(({ spot, visible, bp }) => {
   const cardW = bp === "sm" ? 220 : 256;
   const lineLen = bp === "sm" ? 50 : 80;
@@ -156,10 +202,20 @@ const ScrollHint: React.FC<{ visible: boolean }> = ({ visible }) => (
 
 /* ================================================================
    MAIN COMPONENT
-   No internal preloader — SitePreloader in page.tsx handles it.
-   This component mounts already visible and starts loading immediately.
    ================================================================ */
 export default function ScrollFrames({ src }: { src?: string }) {
+  const bp = useBreakpoint();
+  const isMobile = bp === "sm";
+
+  const FRAME_COUNT     = isMobile ? MOBILE_FRAME_COUNT     : DESKTOP_FRAME_COUNT;
+  const SECTIONS        = isMobile ? MOBILE_SECTIONS        : DESKTOP_SECTIONS;
+  const HOTSPOTS        = isMobile ? MOBILE_HOTSPOTS        : DESKTOP_HOTSPOTS;
+  const PAUSE_POINTS    = isMobile ? MOBILE_PAUSE_POINTS    : DESKTOP_PAUSE_POINTS;
+  const INTRO_END_FRAME = isMobile ? MOBILE_INTRO_END_FRAME : DESKTOP_INTRO_END_FRAME;
+  const framePath       = isMobile ? mobileFramePath        : desktopFramePath;
+  const TOTAL_DOT_STOPS = PAUSE_POINTS.length + 1;
+
+  // ── State ───────────────────────────────────────────────────────
   const [activeSection, setActiveSection] = useState<number | null>(null);
   const [introComplete, setIntroComplete] = useState(false);
   const [hotspotVisible, setHotspotVisible] = useState<Record<number, boolean>>({});
@@ -167,13 +223,14 @@ export default function ScrollFrames({ src }: { src?: string }) {
   const [showButtons, setShowButtons] = useState(false);
   const [canvasReady, setCanvasReady] = useState(false);
 
+  // ── Refs ────────────────────────────────────────────────────────
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const progressRef = useRef<HTMLDivElement>(null);
   const tlRef = useRef<gsap.core.Timeline | null>(null);
 
-  const imagesRef = useRef<(HTMLImageElement | null)[]>(new Array(FRAME_COUNT).fill(null));
-  const loadedRef = useRef<boolean[]>(new Array(FRAME_COUNT).fill(false));
+  const imagesRef = useRef<(HTMLImageElement | null)[]>([]);
+  const loadedRef = useRef<boolean[]>([]);
 
   const targetFrameRef = useRef(1);
   const drawnFrameRef = useRef(-1);
@@ -200,9 +257,107 @@ export default function ScrollFrames({ src }: { src?: string }) {
   const bgActiveReqRef = useRef(0);
   const bgLoadStartedRef = useRef(false);
 
-  const playSectionAnimationRef = useRef<(idx: number) => void>(() => { });
+  const playSectionAnimationRef = useRef<(idx: number) => void>(() => {});
 
-  const bp = useBreakpoint();
+  // ── FIX: Store stable canvas pixel dimensions set once at init ──
+  // Never changed by ResizeObserver or ScrollTrigger layout mutations.
+  const canvasWRef = useRef(0);
+  const canvasHRef = useRef(0);
+
+  // ── Reset when switching mobile/desktop ──────────────────────
+  const prevIsMobileRef = useRef<boolean | null>(null);
+  useEffect(() => {
+    if (prevIsMobileRef.current === isMobile) return;
+    prevIsMobileRef.current = isMobile;
+
+    cancelAnimationFrame(rafRef.current);
+    if (activeTweenRef.current) { activeTweenRef.current.kill(); activeTweenRef.current = null; }
+    ScrollTrigger.getAll()
+      .filter(t => t.vars.id === "scroll-frames-trigger")
+      .forEach(t => t.kill());
+    if (hotspotTimerRef.current) clearTimeout(hotspotTimerRef.current);
+    if (settleTimerRef.current) clearTimeout(settleTimerRef.current);
+
+    imagesRef.current = new Array(FRAME_COUNT).fill(null);
+    loadedRef.current = new Array(FRAME_COUNT).fill(false);
+
+    targetFrameRef.current = 1;
+    drawnFrameRef.current = -1;
+    stProxyRef.current = { frame: 1 };
+    proxyRef.current = { frame: 1 };
+    tweenGenRef.current = 0;
+    scrollingToSectionRef.current = null;
+    loopingSectionRef.current = null;
+    activeSectionRef.current = null;
+    introCompleteRef.current = false;
+    readyRef.current = false;
+    pendingHotspotRef.current = {};
+    bgQueueRef.current = [];
+    bgQueueIdxRef.current = 0;
+    bgActiveReqRef.current = 0;
+    bgLoadStartedRef.current = false;
+    tlRef.current = null;
+    canvasWRef.current = 0;
+    canvasHRef.current = 0;
+
+    setActiveSection(null);
+    setIntroComplete(false);
+    setHotspotVisible({});
+    setCurrentDot(0);
+    setShowButtons(false);
+    setCanvasReady(false);
+  }, [isMobile, FRAME_COUNT]);
+
+  /* ================================================================
+     FIX: Canvas sizing — use window dimensions, NOT container dims.
+     Container clientHeight is mutated by ScrollTrigger during pin
+     setup (adds spacer divs, changes layout), which caused the canvas
+     to be resized mid-animation producing the shrinking frame bug.
+
+     Strategy:
+     - Set canvas pixel size to window.innerWidth × window.innerHeight ONCE at init.
+     - On genuine window resize (user rotates phone, resizes browser),
+       update canvas size and force a redraw — but ONLY after a 300ms
+       debounce so ScrollTrigger's own layout recalculations don't fire it.
+     - Never use ResizeObserver on the container.
+  ================================================================ */
+  const resizeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const syncCanvasToWindow = useCallback(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const w = window.innerWidth;
+    const h = window.innerHeight;
+    if (canvasWRef.current === w && canvasHRef.current === h) return; // no change
+    canvas.width = w;
+    canvas.height = h;
+    canvasWRef.current = w;
+    canvasHRef.current = h;
+    drawnFrameRef.current = -1; // force redraw at new size
+  }, []);
+
+  useEffect(() => {
+    if (!canvasReady) return;
+
+    // Initial size
+    syncCanvasToWindow();
+
+    // Debounced resize handler — 300ms delay filters out ScrollTrigger's
+    // layout mutations which happen in bursts during pin attachment
+    const onResize = () => {
+      if (resizeTimerRef.current) clearTimeout(resizeTimerRef.current);
+      resizeTimerRef.current = setTimeout(() => {
+        syncCanvasToWindow();
+        ScrollTrigger.refresh();
+      }, 300);
+    };
+
+    window.addEventListener("resize", onResize);
+    return () => {
+      window.removeEventListener("resize", onResize);
+      if (resizeTimerRef.current) clearTimeout(resizeTimerRef.current);
+    };
+  }, [canvasReady, syncCanvasToWindow]);
 
   /* ================================================================
      SET TARGET FRAME
@@ -241,42 +396,69 @@ export default function ScrollFrames({ src }: { src?: string }) {
       pendingHotspotRef.current = { ...newVis };
       setHotspotVisible({ ...newVis });
     }
-  }, []);
+  }, [FRAME_COUNT, HOTSPOTS]);
 
   /* ================================================================
      RAF RENDER LOOP
-     ================================================================ */
+     Draws with cover-fit: image always fills the full canvas
+     with correct aspect ratio, no black bars, no distortion.
+     Uses stable canvasWRef/canvasHRef — immune to ScrollTrigger
+     layout mutations because we never read canvas.width/height
+     during the draw (those are set once and stay fixed).
+  ================================================================ */
   const startRafLoop = useCallback(() => {
     const loop = () => {
-      let target = Math.max(1, Math.min(FRAME_COUNT, Math.round(targetFrameRef.current)));
-      if (!loadedRef.current[target - 1] || !imagesRef.current[target - 1]) {
-        let lo = target - 2, hi = target, found = false;
+      const desired = Math.max(1, Math.min(FRAME_COUNT, Math.round(targetFrameRef.current)));
+
+      let target = -1;
+      if (loadedRef.current[desired - 1] && imagesRef.current[desired - 1]) {
+        target = desired;
+      } else {
+        let lo = desired - 2, hi = desired;
         while (lo >= 0 || hi < FRAME_COUNT) {
-          if (lo >= 0 && loadedRef.current[lo] && imagesRef.current[lo]) { target = lo + 1; found = true; break; }
-          if (hi < FRAME_COUNT && loadedRef.current[hi] && imagesRef.current[hi]) { target = hi + 1; found = true; break; }
+          if (lo >= 0 && loadedRef.current[lo] && imagesRef.current[lo]) { target = lo + 1; break; }
+          if (hi < FRAME_COUNT && loadedRef.current[hi] && imagesRef.current[hi]) { target = hi + 1; break; }
           lo--; hi++;
         }
-        if (!found) { rafRef.current = requestAnimationFrame(loop); return; }
       }
+
+      if (target === -1) {
+        rafRef.current = requestAnimationFrame(loop);
+        return;
+      }
+
       if (target !== drawnFrameRef.current) {
         const canvas = canvasRef.current;
         const img = imagesRef.current[target - 1];
-        if (canvas && img && loadedRef.current[target - 1]) {
+        if (canvas && img) {
           const ctx = canvas.getContext("2d");
           if (ctx) {
-            if (canvas.width !== img.naturalWidth || canvas.height !== img.naturalHeight) {
-              canvas.width = img.naturalWidth;
-              canvas.height = img.naturalHeight;
+            // FIX: read stable refs, not canvas.width/height which
+            // can reflect stale values if the canvas was just resized
+            const cw = canvasWRef.current || canvas.width;
+            const ch = canvasHRef.current || canvas.height;
+            const iw = img.naturalWidth;
+            const ih = img.naturalHeight;
+
+            if (cw > 0 && ch > 0 && iw > 0 && ih > 0) {
+              // Cover-fit: scale image so it fills canvas completely
+              const scale = Math.max(cw / iw, ch / ih);
+              const drawW = iw * scale;
+              const drawH = ih * scale;
+              const offsetX = (cw - drawW) / 2;
+              const offsetY = (ch - drawH) / 2;
+              ctx.clearRect(0, 0, cw, ch);
+              ctx.drawImage(img, offsetX, offsetY, drawW, drawH);
+              drawnFrameRef.current = target;
             }
-            ctx.drawImage(img, 0, 0);
-            drawnFrameRef.current = target;
           }
         }
       }
+
       rafRef.current = requestAnimationFrame(loop);
     };
     rafRef.current = requestAnimationFrame(loop);
-  }, []);
+  }, [FRAME_COUNT]);
 
   /* ================================================================
      BACKGROUND LOADER
@@ -298,8 +480,7 @@ export default function ScrollFrames({ src }: { src?: string }) {
       };
       img.src = framePath(idx + 1); imgs[idx] = img;
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [framePath]);
 
   const reprioritizeBgQueue = useCallback((sectionIndex: number) => {
     const section = SECTIONS[sectionIndex], loaded = loadedRef.current;
@@ -312,12 +493,20 @@ export default function ScrollFrames({ src }: { src?: string }) {
     bgQueueRef.current = [...priority, ...rest];
     bgQueueIdxRef.current = 0;
     loadNextBg();
-  }, [loadNextBg]);
+  }, [SECTIONS, loadNextBg]);
 
   /* ================================================================
-     LOADING — starts immediately on mount, no gating needed
-     ================================================================ */
+     LOADING
+     FIX: Canvas pixel dimensions set from window.innerWidth/Height,
+     NOT from image natural size and NOT from container clientWidth/Height.
+     This is the stable source of truth that ScrollTrigger cannot mutate.
+  ================================================================ */
   useEffect(() => {
+    if (imagesRef.current.length !== FRAME_COUNT) {
+      imagesRef.current = new Array(FRAME_COUNT).fill(null);
+      loadedRef.current = new Array(FRAME_COUNT).fill(false);
+    }
+
     const imgs = imagesRef.current, loaded = loadedRef.current;
     let phase1Done = 0;
 
@@ -325,39 +514,25 @@ export default function ScrollFrames({ src }: { src?: string }) {
       if (bgLoadStartedRef.current) return;
       bgLoadStartedRef.current = true;
       const allFramesToLoad = new Set<number>();
-      
-      // Intro and intermediate scrolling sections (load every 2nd frame)
+
       for (let i = READY_THRESHOLD; i < 200; i += 2) allFramesToLoad.add(i);
       for (let i = 200; i < 210; i += 2) allFramesToLoad.add(i);
-      for (let i = 433; i < 500; i += 2) allFramesToLoad.add(i);
-      for (let i = 666; i < 795; i += 2) allFramesToLoad.add(i);
-      
-      // Looping sections (load EVERY frame to prevent lag)
-      for (let i = 210; i < 433; i++) allFramesToLoad.add(i);
-      for (let i = 500; i < 666; i++) allFramesToLoad.add(i);
-      for (let i = 795; i < 900; i++) allFramesToLoad.add(i);
+
+      SECTIONS.forEach(s => {
+        for (let i = s.frameEnd; i < Math.min(s.frameEnd + 200, FRAME_COUNT); i += 2) allFramesToLoad.add(i);
+        for (let i = s.frameStart; i < s.frameEnd; i++) allFramesToLoad.add(i);
+      });
 
       const q: number[] = [];
       const added = new Set<number>();
-
       const addPattern = (step: number) => {
         for (let i = READY_THRESHOLD; i < FRAME_COUNT; i += step) {
-          if (allFramesToLoad.has(i) && !added.has(i)) {
-            q.push(i);
-            added.add(i);
-          }
+          if (allFramesToLoad.has(i) && !added.has(i)) { q.push(i); added.add(i); }
         }
       };
-
-      addPattern(24);
-      addPattern(12);
-      addPattern(6);
-
+      addPattern(24); addPattern(12); addPattern(6);
       for (let i = READY_THRESHOLD; i < FRAME_COUNT; i++) {
-        if (allFramesToLoad.has(i) && !added.has(i)) {
-          q.push(i);
-          added.add(i);
-        }
+        if (allFramesToLoad.has(i) && !added.has(i)) { q.push(i); added.add(i); }
       }
 
       bgQueueRef.current = q; bgQueueIdxRef.current = 0;
@@ -370,12 +545,33 @@ export default function ScrollFrames({ src }: { src?: string }) {
         phase1Done++;
         if (phase1Done === READY_THRESHOLD && !readyRef.current) {
           readyRef.current = true;
+          const canvas = canvasRef.current;
+          const img0 = imagesRef.current[0];
 
-          const canvas = canvasRef.current, img0 = imagesRef.current[0];
           if (canvas && img0) {
-            canvas.width = img0.naturalWidth; canvas.height = img0.naturalHeight;
-            canvas.getContext("2d")?.drawImage(img0, 0, 0);
-            drawnFrameRef.current = 1;
+            // FIX: Use window dimensions as the one true source for canvas size.
+            // container.clientHeight is unreliable — ScrollTrigger wraps the
+            // container in a spacer and changes its layout height during pin setup,
+            // which would fire ResizeObserver and corrupt canvas size mid-animation.
+            const w = window.innerWidth;
+            const h = window.innerHeight;
+            canvas.width = w;
+            canvas.height = h;
+            canvasWRef.current = w;
+            canvasHRef.current = h;
+
+            // Draw first frame with cover-fit
+            const ctx = canvas.getContext("2d");
+            if (ctx) {
+              const iw = img0.naturalWidth;
+              const ih = img0.naturalHeight;
+              const scale = Math.max(w / iw, h / ih);
+              const drawW = iw * scale;
+              const drawH = ih * scale;
+              ctx.clearRect(0, 0, w, h);
+              ctx.drawImage(img0, (w - drawW) / 2, (h - drawH) / 2, drawW, drawH);
+              drawnFrameRef.current = 1;
+            }
           }
 
           requestAnimationFrame(() => {
@@ -386,25 +582,19 @@ export default function ScrollFrames({ src }: { src?: string }) {
       }
     };
 
-    const loadNext = () => {
-      for (let i = 0; i < READY_THRESHOLD; i++) {
-        if (i % 2 !== 0) {
-          onLoad(i);
-          continue;
-        }
-        const img = new Image();
-        img.crossOrigin = "anonymous"; img.decoding = "async";
-        img.onload = img.onerror = () => { onLoad(i); };
-        img.src = framePath(i + 1);
-        imgs[i] = img;
-      }
-    };
-    loadNext();
+    for (let i = 0; i < READY_THRESHOLD; i++) {
+      if (i % 2 !== 0) { onLoad(i); continue; }
+      const img = new Image();
+      img.crossOrigin = "anonymous"; img.decoding = "async";
+      img.onload = img.onerror = () => { onLoad(i); };
+      img.src = framePath(i + 1);
+      imgs[i] = img;
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loadNextBg]);
+  }, [isMobile]);
 
   /* ================================================================
-     GSAP SCROLL SETUP — starts as soon as phase 1 frames are ready
+     GSAP SCROLL SETUP
      ================================================================ */
   useEffect(() => {
     if (!canvasReady || !containerRef.current) return;
@@ -415,11 +605,7 @@ export default function ScrollFrames({ src }: { src?: string }) {
     const stProxy = stProxyRef.current;
 
     const playSectionAnimation = (sectionIndex: number) => {
-      if (activeTweenRef.current) {
-        activeTweenRef.current.kill();
-        activeTweenRef.current = null;
-      }
-
+      if (activeTweenRef.current) { activeTweenRef.current.kill(); activeTweenRef.current = null; }
       tweenGenRef.current += 1;
       const myGeneration = tweenGenRef.current;
       loopingSectionRef.current = sectionIndex;
@@ -440,7 +626,6 @@ export default function ScrollFrames({ src }: { src?: string }) {
       const runTween = () => {
         if (tweenGenRef.current !== myGeneration) return;
         proxyRef.current.frame = section.frameStart;
-
         activeTweenRef.current = gsap.to(proxyRef.current, {
           frame: section.frameEnd,
           duration,
@@ -456,7 +641,6 @@ export default function ScrollFrames({ src }: { src?: string }) {
           },
         });
       };
-
       runTween();
     };
 
@@ -465,13 +649,11 @@ export default function ScrollFrames({ src }: { src?: string }) {
     const handleScrubUpdate = () => {
       const tl = tlRef.current;
       if (!tl) return;
-
       const currentTime = tl.time();
       const introTime = tl.labels["intro_end"] || 9.0;
 
       if (currentTime < introTime) {
         const nf = Math.round(stProxy.frame);
-
         const dotF = [...PAUSE_POINTS.map(p => p.at), INTRO_END_FRAME];
         let nearest = 0, minD = Infinity;
         dotF.forEach((f, i) => { const d = Math.abs(nf - f); if (d < minD) { minD = d; nearest = i; } });
@@ -489,9 +671,7 @@ export default function ScrollFrames({ src }: { src?: string }) {
           if (activeTweenRef.current) { activeTweenRef.current.kill(); activeTweenRef.current = null; }
           tweenGenRef.current += 1;
         }
-
         setTargetFrame(nf);
-
       } else {
         introCompleteRef.current = true;
         setIntroComplete(true);
@@ -561,7 +741,7 @@ export default function ScrollFrames({ src }: { src?: string }) {
       if (settleTimerRef.current) clearTimeout(settleTimerRef.current);
       loopingSectionRef.current = null;
     };
-  }, [canvasReady, setTargetFrame, startRafLoop]);
+  }, [canvasReady, setTargetFrame, startRafLoop, SECTIONS, PAUSE_POINTS, INTRO_END_FRAME]);
 
   /* ================================================================
      DOT CLICK
@@ -582,7 +762,7 @@ export default function ScrollFrames({ src }: { src?: string }) {
     });
     setHotspotVisible({});
     pendingHotspotRef.current = {};
-  }, []);
+  }, [PAUSE_POINTS, INTRO_END_FRAME]);
 
   /* ================================================================
      SECTION CLICK
@@ -592,7 +772,6 @@ export default function ScrollFrames({ src }: { src?: string }) {
     if (!st || !tlRef.current) return;
 
     reprioritizeBgQueue(sectionIndex);
-
     if (settleTimerRef.current) { clearTimeout(settleTimerRef.current); settleTimerRef.current = null; }
 
     scrollingToSectionRef.current = sectionIndex;
@@ -624,18 +803,34 @@ export default function ScrollFrames({ src }: { src?: string }) {
 
   /* ================================================================
      RENDER
-     ================================================================ */
+     Canvas is position:absolute inset-0 with width/height 100%
+     so CSS layout always fills the container visually. The canvas
+     pixel buffer (canvas.width/height) is set separately via
+     window.innerWidth/Height and never touched by layout changes.
+  ================================================================ */
   return (
     <div
       ref={containerRef}
-      style={{ width: "100%", height: "100vh", background: "#111", overflow: "hidden", position: "relative" }}
+      style={{
+        width: "100%",
+        height: "100vh",
+        background: "#111",
+        overflow: "hidden",
+        position: "relative",
+      }}
     >
-      <canvas ref={canvasRef} style={{
-        position: "absolute", inset: 0, width: "100%", height: "100%",
-        objectFit: "cover",
-        opacity: canvasReady ? 1 : 0,
-        transition: "opacity 0.4s ease",
-      }} />
+      <canvas
+        ref={canvasRef}
+        style={{
+          position: "absolute",
+          inset: 0,
+          width: "100%",
+          height: "100%",
+          display: "block",
+          opacity: canvasReady ? 1 : 0,
+          transition: "opacity 0.4s ease",
+        }}
+      />
 
       {HOTSPOTS.map(spot => (
         <HotspotCard key={spot.id} spot={spot} visible={hotspotVisible[spot.id] ?? false} bp={bp} />
@@ -710,6 +905,7 @@ export default function ScrollFrames({ src }: { src?: string }) {
         ))}
       </div>
 
+      <ScrollHint visible={showScrollHint} />
     </div>
   );
 }

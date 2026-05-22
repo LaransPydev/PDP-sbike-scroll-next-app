@@ -62,7 +62,7 @@ export default function RootLayout({
           />
         ))}
       </head>
-      <body className={`${outfit.variable} ${soehne.variable}`}>
+      <body className={`${outfit.variable} ${soehne.variable}`} suppressHydrationWarning>
         {children}
       </body>
     </html>
